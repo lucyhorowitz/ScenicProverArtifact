@@ -28,7 +28,7 @@ RUN pip install git+https://github.com/NN---/pyeda.git
 
 # Install Pacti
 WORKDIR pacti
-RUN pip install -e .
+RUN pip install .
 WORKDIR ..
 
 # Install Lean
@@ -36,9 +36,21 @@ RUN sh install_lean.sh -y
 ENV PATH="/root/.elan/bin:$PATH"
 RUN lake
 
+# Fetch prebuilt Lean/mathlib artifacts for LeanLTL so verification does not
+# compile the full dependency graph at runtime.
+WORKDIR examples/contracts/LeanLTL
+RUN lake exe cache get
+WORKDIR ../../..
+
 # Build REPL
 WORKDIR examples/contracts/repl
 RUN lake build
 WORKDIR ../../..
 
-CMD /bin/bash
+# AirSim 1.8.1 otherwise pulls NumPy 2.x through the latest OpenCV release,
+# which is incompatible with Scenic and the binary Shapely wheel in this image.
+RUN pip install msgpack-rpc-python promise wheel \
+    numpy==1.26.4 opencv-contrib-python==4.10.0.84 && \
+    pip install --no-build-isolation --no-deps airsim==1.8.1
+
+CMD ["/bin/bash"]

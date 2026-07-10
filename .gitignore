@@ -1,4 +1,6 @@
 .DS_Store
+.vscode/
 **/.lake/
 __pycache__/
 *.py[cod]
+examples/airsim/worldInfos/

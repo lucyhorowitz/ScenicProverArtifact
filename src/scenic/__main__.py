@@ -236,6 +236,7 @@ parser.add_argument(
 ## Scenic "generate" Command ##
 generate_parser = subparsers.add_parser("generate")
 generate_parser.set_defaults(func=scenic_generate)
+generate_parser.add_argument("scenicFile", help="a Scenic file to run", metavar="FILE")
 
 
 mainOptions = generate_parser.add_argument_group("main options")
@@ -359,6 +360,7 @@ debugOpts.add_argument(
 ## Scenic "verify" Command ##
 verify_parser = subparsers.add_parser("verify")
 verify_parser.set_defaults(func=scenic_verify)
+verify_parser.add_argument("scenicFile", help="a Scenic file to run", metavar="FILE")
 
 debugOpts = verify_parser.add_argument_group("debugging options")
 debugOpts.add_argument(
@@ -367,12 +369,8 @@ debugOpts.add_argument(
     help='enter interactive debugger on errors (implies "-b")',
 )
 
-# Positional arguments
-parser.add_argument("scenicFile", help="a Scenic file to run", metavar="FILE")
-
 # Parse arguments and set up configuration
 # Use generate if no subcommand specified
-sys.argv = sys.argv
 subcommand_list = ["generate", "verify"]
 if sys.argv[1] not in subcommand_list:
     sys.argv.insert(1, "generate")
