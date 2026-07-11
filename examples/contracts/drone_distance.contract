@@ -23,7 +23,10 @@ from scenic.domains.driving.controllers import PIDLongitudinalController, PIDLat
 from scenic.domains.driving.actions import RegulatedControlAction
 
 ## World File ##
-ENVIRONMENT = scenarioFromFile(localPath("followPatrol.scenic"))
+ENVIRONMENT = scenarioFromFile(
+    localPath("followPatrol.scenic"),
+    params={"worldInfoPath": str(localPath("../airsim/worldInfos/blocks-world-info-airmin-test"))},
+)
 LEANLTL_LOC = localPath("LeanLTL")
 REPL_LOC = localPath("repl")
 
@@ -90,7 +93,7 @@ component ReportedSquaredDistanceSystem(follow_gps_error, report_error):
 component PositionReportReceiver(report_error: float):
     """Receives the position reported by the lead drone."""
     sensors:
-        self.leadPos as true_lead_pos
+        self.leadPos: Vector as true_lead_pos
 
     outputs:
         reported_x: float
