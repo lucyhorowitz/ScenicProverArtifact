@@ -1,0 +1,168 @@
+"""Drone distance example contract"""
+
+## PARAMS #####################################################################
+# If NAIVE_APPROACH is True, uses a naive approach that is largely equivalent
+# to testing the system as a monolith (as described in our paper).
+NAIVE_APPROACH = False
+# TIME_LIMIT is the testing time budget, in seconds.
+TIME_LIMIT = 5*60
+# To produce all the results needed to generate a similar figure to the one in
+# our paper, you will want to run experiments with TIME_LIMIT set to 
+# 1*60, 5*60, 15*60, 30*60, 60*60, 2*60*60, 4*60*60, and 8*60*60
+# with NAIVE_APPROACH set to both True and False.
+###############################################################################
+
+import math
+import random
+from typing import Union
+import numpy
+
+import scenic
+from scenic.core.geometry import normalizeAngle
+from scenic.domains.driving.controllers import PIDLongitudinalController, PIDLateralController
+from scenic.domains.driving.actions import RegulatedControlAction
+
+## World File ##
+ENVIRONMENT = scenarioFromFile(localPath("followPatrol.scenic"))
+LEANLTL_LOC = localPath("LeanLTL")
+REPL_LOC = localPath("repl")
+
+SEED=42
+random.seed(SEED)
+numpy.random.seed(SEED)
+
+## Components ##
+
+# Sensor components
+component ReportedDistanceComputer():
+    """A component that computes distance to a drone from its reported position and its own position."""
+    inputs:
+        own_x: float
+        own_y: float
+        own_z: float
+        reported_x: float
+        reported_y: float
+        reported_z: float
+
+    outputs:
+        reported_dist_sq: float
+
+    body:
+        x = reported_x - own_x
+        y = reported_y - own_y
+        z = reported_z - own_z
+        reported_dist_sq = x * x + y * y + z * z
+        return {"reported_dist_sq": reported_dist_sq}
+
+component ReportedDistanceSystem(follow_gps_error, lead_gps_error):
+    outputs:
+        reported_dist_sq: float
+
+    compose:
+        gps = GPS(follow_gps_error)
+        prr = PositionReportReceiver(lead_gps_error)
+        rdc = ReportedDistanceComputer()
+
+component PositionReportReceiver(gps_error: float):
+    """Receives the position reported by the lead drone. `gps_error` is
+    meant to be the same kind of error that the follower drone has in its own
+    GPS"""
+    sensors:
+        self.leadPos as true_lead_pos
+
+    outputs:
+        reported_x: float
+        reported_y: float
+        reported_z: float
+    
+    body:
+        noise_x = random.uniform(-gps_error, gps_error)
+        noise_y = random.uniform(-gps_error, gps_error)
+        noise_z = random.uniform(-gps_error, gps_error)
+        reported_x = true_lead_pos.x + noise_x
+        reported_y = true_lead_pos.y + noise_y
+        reported_z = true_lead_pos.z + noise_z
+        return {"reported_x": reported_x, "reported_y": reported_y, "reported_z": reported_z}
+
+component RangeSensor(range_err: float, miss_prob=0.1, max_range=1000.0):
+    """A component which uses some kind of sensor to track the distance to the 
+    target object (lead drone). With some noise, and with probability `miss_prob`
+    it thinks the distance is a random value between 0 and `max_range`"""
+    sensors:
+        self.leadPos: Vector as true_lead_pos
+        self.position: Vector as true_pos
+
+    outputs: 
+        ranged_dist_sq: float
+    
+    body:
+        noise = random.uniform(-range_err, range_err)
+        x = true_lead_pos.x - true_pos.x
+        y = true_lead_pos.y - true_pos.y
+        z = true_lead_pos.z - true_pos.z
+        dist = max(0.0, math.sqrt(x * x + y * y + z * z) + noise)
+        dist_sq = dist * dist
+        if random.random() < miss_prob:
+            return {"ranged_dist_sq": random.uniform(0.0, max_range * max_range)}
+        else:
+            return {"ranged_dist_sq": dist_sq}
+
+component GPS(gps_error: float):
+    """A GPS which reports with some error the position of the drone.
+    The error is uniform on each component, rather than within a sphere.
+    Geometry is irritating but I might do it later."""
+    sensors:
+        self.position: Vector as true_pos
+
+    outputs:
+        est_x: float
+        est_y: float
+        est_z: float
+
+    body:  
+        noise_x = random.uniform(-gps_error, gps_error)
+        noise_y = random.uniform(-gps_error, gps_error)
+        noise_z = random.uniform(-gps_error, gps_error)
+        est_x = true_pos.x + noise_x
+        est_y = true_pos.y + noise_y
+        est_z = true_pos.z + noise_z
+        return {"est_x": est_x, "est_y": est_y, "est_z": est_z}
+
+component VelocityEstimator(vel_error):
+    sensors:
+        self.velocity: Vector as true_vel
+    
+    outputs: 
+        est_vx: float
+        est_vy: float
+        est_vz: float
+
+    body:  
+        noise_x = random.uniform(-vel_error, vel_error)
+        noise_y = random.uniform(-vel_error, vel_error)
+        noise_z = random.uniform(-vel_error, vel_error)
+        est_vx = true_vel.x + noise_x
+        est_vy = true_vel.y + noise_y
+        est_vz = true_vel.z + noise_z
+        return {"est_vx": est_vx, "est_vy": est_vy, "est_vz": est_vz}
+
+component MeanSquaredDistanceFilter():
+    inputs:
+        dist1_sq: float
+        dist2_sq: float
+
+    outputs: 
+        out_dist_sq: float
+
+    body: 
+        out_dist_sq = (dist1_sq + dist2_sq) / 2
+        return {"out_dist_sq": out_dist_sq}
+
+component DistanceSystem():
+    outputs:
+        dist_sq: float
+
+    compose:
+        gps = GPS()
+        prr = PositionReportReceiver()
+
