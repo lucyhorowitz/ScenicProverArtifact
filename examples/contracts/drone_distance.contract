@@ -6,6 +6,17 @@
 NAIVE_APPROACH = False
 # TIME_LIMIT is the testing time budget, in seconds.
 TIME_LIMIT = 5*60
+# Initial sensor-error values for simulation smoke testing. These are not
+# intended to model a particular GPS, report channel, or range sensor.
+FOLLOW_GPS_ERROR = 0.5
+REPORT_ERROR = 0.5
+RANGE_ERROR = 0.25
+RANGE_MISS_PROB = 0.1
+MAX_SENSOR_RANGE = 1000.0
+MIN_FOLLOW_DIST = 5.0
+MAX_FOLLOW_DIST = 15.0
+FOLLOW_GAIN = 0.2
+MAX_COMPONENT_SPEED = 3.0
 # To produce all the results needed to generate a similar figure to the one in
 # our paper, you will want to run experiments with TIME_LIMIT set to
 # 1*60, 5*60, 15*60, 30*60, 60*60, 2*60*60, 4*60*60, and 8*60*60
@@ -21,6 +32,7 @@ import scenic
 from scenic.core.geometry import normalizeAngle
 from scenic.domains.driving.controllers import PIDLongitudinalController, PIDLateralController
 from scenic.domains.driving.actions import RegulatedControlAction
+from scenic.simulators.airsim.actions import SetVelocity
 
 ## World File ##
 ENVIRONMENT = scenarioFromFile(
@@ -210,3 +222,121 @@ component VelocityEstimator(vel_error):
         est_vy = true_vel.y + noise_y
         est_vz = true_vel.z + noise_z
         return {"est_vx": est_vx, "est_vy": est_vy, "est_vz": est_vz}
+
+component FollowerController(min_dist, max_dist, gain, max_component_speed):
+    """Commands zero velocity inside the inclusive following band from
+    `min_dist` to `max_dist`, moves toward the leader above the band, and moves
+    away from the leader below the band."""
+    inputs:
+        dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+
+    outputs:
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+
+    body:
+        if dist_sq > (max_dist * max_dist):
+            cmd_vx = min(max(gain * rel_x, -max_component_speed), max_component_speed)
+            cmd_vy = min(max(gain * rel_y, -max_component_speed), max_component_speed)
+            cmd_vz = min(max(gain * rel_z, -max_component_speed), max_component_speed)
+        elif dist_sq < (min_dist * min_dist):
+            cmd_vx = min(max(-gain * rel_x, -max_component_speed), max_component_speed)
+            cmd_vy = min(max(-gain * rel_y, -max_component_speed), max_component_speed)
+            cmd_vz = min(max(-gain * rel_z, -max_component_speed), max_component_speed)
+        else:
+            cmd_vx = 0.0
+            cmd_vy = 0.0
+            cmd_vz = 0.0
+
+        return {"cmd_vx": cmd_vx, "cmd_vy": cmd_vy, "cmd_vz": cmd_vz}
+
+component VelocityActionGenerator():
+    """ Given velocity, outputs a SetVelocity."""
+    inputs:
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+
+    outputs:
+        velocity_action: SetVelocity
+
+    body:
+        velocity = Vector(cmd_vx, cmd_vy, cmd_vz)
+        action = SetVelocity(velocity)
+
+        return {"velocity_action": action}
+
+component DroneControls():
+    """ This component receives actions for the drone and executes them
+    Convention is that any non-None action passed into an action component
+    is taken each turn.
+    """
+    actions:
+        velocity_action: SetVelocity
+
+component DroneActionControls():
+    inputs:
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+
+    compose:
+        ag = VelocityActionGenerator()
+        dc = DroneControls()
+
+        connect cmd_vx to ag.cmd_vx
+        connect cmd_vy to ag.cmd_vy
+        connect cmd_vz to ag.cmd_vz
+
+        connect ag.velocity_action to dc.velocity_action
+
+component Follower(follow_gps_error: float, report_error: float, range_err: float,
+        min_dist: float, max_dist: float, gain: float, max_component_speed: float,
+        miss_prob=0.1, max_range=1000.0):
+    """This is the whole drone!"""
+    compose:
+        sds = SquaredDistanceSystem(follow_gps_error, report_error, range_err, miss_prob, max_range)
+        fc = FollowerController(min_dist, max_dist, gain, max_component_speed)
+        dac = DroneActionControls()
+
+        connect sds.dist_sq to fc.dist_sq
+        connect sds.rel_x to fc.rel_x
+        connect sds.rel_y to fc.rel_y
+        connect sds.rel_z to fc.rel_z
+
+        connect fc.cmd_vx to dac.cmd_vx
+        connect fc.cmd_vy to dac.cmd_vy
+        connect fc.cmd_vz to dac.cmd_vz
+
+## Contracts ##
+
+contract FollowerSmokeTest():
+    guarantees:
+        always True
+
+implement "follower" with Follower(
+    FOLLOW_GPS_ERROR,
+    REPORT_ERROR,
+    RANGE_ERROR,
+    MIN_FOLLOW_DIST,
+    MAX_FOLLOW_DIST,
+    FOLLOW_GAIN,
+    MAX_COMPONENT_SPEED,
+    RANGE_MISS_PROB,
+    MAX_SENSOR_RANGE,
+) as drone2
+
+follower_smoke_test = test drone2 satisfies FollowerSmokeTest(),
+    using SimulationTesting(
+        scenario=ENVIRONMENT,
+        maxSteps=500,
+        confidence=0.95,
+        batchSize=1,
+        verbose=True,
+    ), terminating after 30 seconds
+
+verify follower_smoke_test
