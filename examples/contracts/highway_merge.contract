@@ -1,0 +1,611 @@
+"""Highway merge arbitration case study.
+
+The ego car must merge into an adjacent lane with traffic (see merge_highway.scenic).
+Redundant rear-gap sensors are conservatively fused; a gap-acceptance rule decides when
+the gap is large enough; a merge governor issues/aborts the maneuver and commits past a
+lateral-progress threshold. The verification chain mixes assumed manufacturer specs,
+Lean-proved component semantics, a Lean-proved refinement of the fused perception,
+statistical simulation testing, and a final Lean-refined system-level safety property:
+significant lateral progress before the commit point only happens when the true gaps
+are safe. Liveness (the merge eventually completes) is established by testing.
+"""
+
+## PARAMS #####################################################################
+# TIME_LIMIT is the testing time budget, in seconds, per tested contract.
+TIME_LIMIT = 10*60
+###############################################################################
+
+import math
+import random
+from typing import Union
+
+from scenic.core.geometry import normalizeAngle
+from scenic.domains.driving.controllers import PIDLongitudinalController, PIDLateralController
+from scenic.domains.driving.actions import RegulatedControlAction
+
+## World File ##
+ENVIRONMENT = scenarioFromFile(localPath("merge_highway.scenic"), mode2D=True)
+LEANLTL_LOC = localPath("LeanLTL")
+REPL_LOC = localPath("repl")
+
+## Constants ##
+MAX_GAP = 250            # reported gap when nothing is in range (matches scenario)
+MIN_FRONT_GAP = 10       # sensed front gap required to merge
+MIN_REAR_GAP = 8         # base sensed rear gap required to merge
+REACTION_TIME = 2        # seconds of closing-speed margin on the rear gap
+COMMIT_THRESHOLD = 0.6   # mergeProgress beyond which the merge always completes
+HOLD_STEPS = 10          # governor debounce steps after an abort
+REAR_ERR = 0.5           # rear gap/closing accuracy bound (in-spec conditions)
+FRONT_ERR = 0.5          # front gap accuracy bound
+PROGRESS_SLACK = 0.02    # max per-step lateral progress without a merge command
+MERGE_DONE = 0.85        # mergeProgress threshold considered "merged"
+TARGET_GAP_OWN = 12      # desired following distance behind the slow car
+MAX_SPEED = 6
+
+## Components ##
+
+# Sensor components
+component RearGapRadar():
+    """Noisy rear gap via radar. In fog it can dangerously overestimate the gap."""
+    sensors:
+        self.rearGap: float as rear_gap_true
+        self.rearClosing: float as rear_closing_true
+        self.visibility: float as visibility
+
+    outputs:
+        radar_rear_gap: float
+        radar_rear_closing: float
+
+    body:
+        if visibility >= 1 and random.random() < 0.15:
+            reported_gap = random.uniform(rear_gap_true, MAX_GAP)
+        else:
+            reported_gap = rear_gap_true + random.gauss(0, 0.1)
+        reported_closing = rear_closing_true + random.gauss(0, 0.1)
+        return {"radar_rear_gap": reported_gap, "radar_rear_closing": reported_closing}
+
+component RearGapLidar():
+    """Noisy rear gap via lidar. In rain, droplet returns can underestimate the gap."""
+    sensors:
+        self.rearGap: float as rear_gap_true
+        self.rearClosing: float as rear_closing_true
+        self.weather: float as weather
+
+    outputs:
+        lidar_rear_gap: float
+        lidar_rear_closing: float
+
+    body:
+        if weather >= 2 and random.random() < 0.1:
+            reported_gap = random.uniform(0, rear_gap_true)
+        else:
+            reported_gap = rear_gap_true + random.gauss(0, 0.1)
+        reported_closing = rear_closing_true + random.gauss(0, 0.1)
+        return {"lidar_rear_gap": reported_gap, "lidar_rear_closing": reported_closing}
+
+component FrontGapCamera():
+    """Noisy gap to the gap leader in the target lane."""
+    sensors:
+        self.frontGap: float as front_gap_true
+
+    outputs:
+        front_gap: float
+
+    body:
+        return {"front_gap": front_gap_true + random.gauss(0, 0.1)}
+
+component OwnLaneGapSensor():
+    """Ground truth gap to the slow car in the ego's own lane."""
+    sensors:
+        self.frontGapOwn: float as own_gap_true
+
+    outputs:
+        own_gap: float
+
+    body:
+        return {"own_gap": own_gap_true}
+
+component Speedometer():
+    """Fetches and outputs ground truth speed."""
+    sensors:
+        self.speed: float as speed_val
+
+    outputs:
+        speed: float
+
+    body:
+        return {"speed": speed_val}
+
+component MergeProgressSensor():
+    """Ground truth lateral merge progress (0 = own lane, 1 = target lane)."""
+    sensors:
+        self.mergeProgress: float as progress_true
+
+    outputs:
+        progress: float
+
+    body:
+        return {"progress": progress_true}
+
+component DirectionSystem():
+    """Ground truth directional references for steering."""
+    sensors:
+        self.targetDir: float as own_dir_val
+        self.mergeDir: float as merge_dir_val
+        self.heading: float as heading_val
+
+    outputs:
+        own_dir: float
+        merge_dir: float
+        heading: float
+
+    body:
+        return {"own_dir": own_dir_val, "merge_dir": merge_dir_val, "heading": heading_val}
+
+# Pure logic components (Lean-provable: bodies stay inside the translatable subset)
+component ConservativeGapFusion():
+    """Fuses the redundant rear sensors conservatively: smallest gap, largest closing speed."""
+    inputs:
+        radar_rear_gap: float
+        lidar_rear_gap: float
+        radar_rear_closing: float
+        lidar_rear_closing: float
+
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    body:
+        fused_gap = min(radar_rear_gap, lidar_rear_gap)
+        fused_closing = max(radar_rear_closing, lidar_rear_closing)
+        return {"rear_gap": fused_gap, "rear_closing": fused_closing}
+
+component GapAcceptanceLogic(min_front_gap, min_rear_gap, reaction_time):
+    """Accepts the gap iff the front gap and the closing-speed-adjusted rear gap suffice."""
+    inputs:
+        front_gap: float
+        rear_gap: float
+        rear_closing: float
+
+    outputs:
+        merge_ok: float
+
+    body:
+        required_rear = min_rear_gap + reaction_time * max(0.0, rear_closing)
+        if front_gap > min_front_gap and rear_gap > required_rear:
+            return {"merge_ok": 1.0}
+        else:
+            return {"merge_ok": 0.0}
+
+component MergeGovernor(commit_threshold, hold_steps):
+    """Issues the merge command. Aborts (and debounces) if the gap closes before the
+    commit threshold; past the threshold the merge always completes."""
+    inputs:
+        merge_ok: float
+        progress: float
+
+    outputs:
+        merge_cmd: float
+
+    state:
+        hold: float = 0.0
+
+    body:
+        if progress >= commit_threshold:
+            state.hold = 0.0
+            return {"merge_cmd": 1.0}
+        else:
+            if merge_ok >= 1.0 and state.hold <= 0.0:
+                state.hold = 0.0
+                return {"merge_cmd": 1.0}
+            else:
+                if merge_ok >= 1.0:
+                    state.hold = max(0.0, state.hold - 1.0)
+                    return {"merge_cmd": 0.0}
+                else:
+                    state.hold = hold_steps
+                    return {"merge_cmd": 0.0}
+
+# Control components
+component SpeedPlanner(target_dist, max_speed):
+    """PID throttle: follow the own-lane leader until the merge is underway, then the
+    target-lane leader."""
+    inputs:
+        own_gap: float
+        front_gap: float
+        progress: float
+        speed: float
+
+    outputs:
+        throttle: float
+
+    state:
+        pid_controller: PIDLongitudinalController = PIDLongitudinalController(K_D=0.1, K_I=0)
+
+    body:
+        if progress > 0.5:
+            dist = front_gap
+        else:
+            dist = min(own_gap, front_gap)
+        throttle = state.pid_controller.run_step(dist - target_dist)
+
+        if speed >= max_speed:
+            throttle = min(0, throttle)
+
+        return {"throttle": float(throttle)}
+
+component MergeSteering():
+    """PID steering toward the target lane while the merge command is active,
+    along the current lane otherwise."""
+    inputs:
+        merge_cmd: float
+        own_dir: float
+        merge_dir: float
+        heading: float
+
+    outputs:
+        steer: float
+
+    state:
+        pid_controller: PIDLateralController = PIDLateralController()
+
+    body:
+        if merge_cmd == 1.0:
+            desired = merge_dir
+        else:
+            desired = own_dir
+        direction_err = normalizeAngle(normalizeAngle(heading) - normalizeAngle(desired))
+        steer = state.pid_controller.run_step(direction_err)
+        return {"steer": steer}
+
+component ActionGenerator():
+    """Given a throttle and steer signal, outputs a RegulatedControlAction."""
+    inputs:
+        throttle: float
+        steer: float
+
+    outputs:
+        control_action: RegulatedControlAction
+
+    state:
+        past_steer: float = 0.0
+
+    body:
+        action = RegulatedControlAction(throttle, steer, state.past_steer,
+            max_throttle=1, max_brake=1, max_steer=1)
+        state.past_steer = steer
+        return {"control_action": action}
+
+component CarControls():
+    """This component receives actions for the car and executes them."""
+    actions:
+        control_action: RegulatedControlAction
+
+# Subsystems
+component RearPerception():
+    """Redundant rear sensing with conservative fusion."""
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    compose:
+        radar = RearGapRadar()
+        lidar = RearGapLidar()
+        fusion = ConservativeGapFusion()
+
+        connect radar.radar_rear_gap to fusion.radar_rear_gap
+        connect radar.radar_rear_closing to fusion.radar_rear_closing
+        connect lidar.lidar_rear_gap to fusion.lidar_rear_gap
+        connect lidar.lidar_rear_closing to fusion.lidar_rear_closing
+
+        connect fusion.rear_gap to rear_gap
+        connect fusion.rear_closing to rear_closing
+
+component MergeActuation():
+    """Steering plus action generation; the only path from the merge command to the road."""
+    inputs:
+        merge_cmd: float
+        own_dir: float
+        merge_dir: float
+        heading: float
+        throttle: float
+
+    compose:
+        ms = MergeSteering()
+        ag = ActionGenerator()
+        cc = CarControls()
+
+        connect merge_cmd to ms.merge_cmd
+        connect own_dir to ms.own_dir
+        connect merge_dir to ms.merge_dir
+        connect heading to ms.heading
+
+        connect throttle to ag.throttle
+        connect ms.steer to ag.steer
+
+        connect ag.control_action to cc.control_action
+
+component MergingCar(min_front_gap, min_rear_gap, reaction_time, commit_threshold, hold_steps, target_dist, max_speed):
+    # The decision components (gal, mg) are direct children so that composition over
+    # this component can chain their guarantees through the shared merge_ok signal.
+    compose:
+        rp = RearPerception()
+        fc = FrontGapCamera()
+        ogs = OwnLaneGapSensor()
+        sm = Speedometer()
+        mps = MergeProgressSensor()
+        ds = DirectionSystem()
+        gal = GapAcceptanceLogic(min_front_gap, min_rear_gap, reaction_time)
+        mg = MergeGovernor(commit_threshold, hold_steps)
+        spd = SpeedPlanner(target_dist, max_speed)
+        act = MergeActuation()
+
+        # Perception into the decision components
+        connect rp.rear_gap to gal.rear_gap
+        connect rp.rear_closing to gal.rear_closing
+        connect fc.front_gap to gal.front_gap
+        connect gal.merge_ok to mg.merge_ok
+        connect mps.progress to mg.progress
+
+        # Speed planning
+        connect ogs.own_gap to spd.own_gap
+        connect fc.front_gap to spd.front_gap
+        connect mps.progress to spd.progress
+        connect sm.speed to spd.speed
+
+        # Actuation
+        connect mg.merge_cmd to act.merge_cmd
+        connect ds.own_dir to act.own_dir
+        connect ds.merge_dir to act.merge_dir
+        connect ds.heading to act.heading
+        connect spd.throttle to act.throttle
+
+## Contracts ##
+
+contract RadarRearAccuracy(err=0.5):
+    """Manufacturer spec: the radar reports the rear gap and closing speed accurately
+    when visibility is clear."""
+    globals:
+        params
+
+    outputs:
+        radar_rear_gap: float
+        radar_rear_closing: float
+
+    assumptions:
+        params["visibility"] == 0
+
+    guarantees:
+        always (self.rearGap - err <= radar_rear_gap <= self.rearGap + err)
+        always (self.rearClosing - err <= radar_rear_closing <= self.rearClosing + err)
+
+contract LidarRearAccuracy(err=0.5):
+    """Manufacturer spec: the lidar reports the rear gap and closing speed accurately
+    when it is not raining."""
+    globals:
+        params
+
+    outputs:
+        lidar_rear_gap: float
+        lidar_rear_closing: float
+
+    assumptions:
+        params["weather"] <= 1
+
+    guarantees:
+        always (self.rearGap - err <= lidar_rear_gap <= self.rearGap + err)
+        always (self.rearClosing - err <= lidar_rear_closing <= self.rearClosing + err)
+
+contract GapFusionSemantics():
+    inputs:
+        radar_rear_gap: float
+        lidar_rear_gap: float
+        radar_rear_closing: float
+        lidar_rear_closing: float
+
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    guarantees:
+        always (rear_gap == min(radar_rear_gap, lidar_rear_gap))
+        always (rear_closing == max(radar_rear_closing, lidar_rear_closing))
+
+contract AccurateRearGapKnownConds(err=0.5):
+    """The fused rear perception is accurate inside both manufacturer spec conditions."""
+    globals:
+        params
+
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    assumptions:
+        (params["visibility"] == 0) and (params["weather"] <= 1)
+
+    guarantees:
+        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
+        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+
+contract AccurateRearGapUnknownConds(err=0.5):
+    """The fused rear perception outside of manufacturer spec conditions."""
+    globals:
+        params
+
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    assumptions:
+        not ((params["visibility"] == 0) and (params["weather"] <= 1))
+
+    guarantees:
+        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
+        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+
+contract AccurateRearGap(err=0.5):
+    """The fused rear perception is accurate."""
+    outputs:
+        rear_gap: float
+        rear_closing: float
+
+    guarantees:
+        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
+        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+
+contract AccurateFrontGap(err=0.5):
+    """The camera reports the target-lane front gap accurately."""
+    outputs:
+        front_gap: float
+
+    guarantees:
+        always (self.frontGap - err <= front_gap <= self.frontGap + err)
+
+contract AccurateProgress():
+    outputs:
+        progress: float
+
+    guarantees:
+        always progress == self.mergeProgress
+
+contract GapAcceptanceSemantics(min_front_gap, min_rear_gap, reaction_time):
+    inputs:
+        front_gap: float
+        rear_gap: float
+        rear_closing: float
+
+    outputs:
+        merge_ok: float
+
+    definitions:
+        required_rear = min_rear_gap + reaction_time * max(0.0, rear_closing)
+
+    guarantees:
+        always (((front_gap > min_front_gap) and (rear_gap > required_rear)) implies (merge_ok == 1.0))
+        always ((not ((front_gap > min_front_gap) and (rear_gap > required_rear))) implies (merge_ok == 0.0))
+
+contract MergeGovernorSafety(commit_threshold):
+    """The governor only commands a merge if the gap is currently accepted or the
+    maneuver is past the commit threshold, and it always aborts otherwise."""
+    inputs:
+        merge_ok: float
+        progress: float
+
+    outputs:
+        merge_cmd: float
+
+    guarantees:
+        always ((merge_cmd == 0.0) or (merge_cmd == 1.0))
+        always ((merge_cmd == 1.0) implies ((merge_ok >= 1.0) or (progress >= commit_threshold)))
+        always (((merge_ok < 1.0) and (progress < commit_threshold)) implies (merge_cmd == 0.0))
+
+contract MergeActuationLimits(slack):
+    """Without a merge command, the car makes no significant lateral progress toward
+    the target lane."""
+    inputs:
+        merge_cmd: float
+
+    guarantees:
+        always ((merge_cmd == 0.0) implies ((next self.mergeProgress) <= self.mergeProgress + slack))
+
+## Overall System Specs ##
+
+contract SafeMerge(min_front_gap, min_rear_gap, commit_threshold, front_err, rear_err, slack):
+    """Whenever the car makes significant lateral progress toward the target lane
+    before the commit threshold, the true gaps satisfy the safety margins."""
+    guarantees:
+        always ((((next self.mergeProgress) > (self.mergeProgress + slack)) and (self.mergeProgress < commit_threshold)) implies ((self.frontGap > min_front_gap - front_err) and (self.rearGap > min_rear_gap - rear_err)))
+
+contract EventuallyMerges(done_threshold):
+    """The merge eventually completes."""
+    guarantees:
+        eventually (self.mergeProgress >= done_threshold)
+
+## Verification Steps ##
+
+# Instantiate the component tree and link it to the ego object.
+implement "EgoCar" with MergingCar(
+    MIN_FRONT_GAP,
+    MIN_REAR_GAP,
+    REACTION_TIME,
+    COMMIT_THRESHOLD,
+    HOLD_STEPS,
+    TARGET_GAP_OWN,
+    MAX_SPEED,
+) as car
+
+# Rear perception: assumed manufacturer specs + proved fusion semantics, refined into
+# accuracy under known conditions; tested accuracy under unknown conditions; merged.
+radar_accuracy = assume car.rp.radar satisfies RadarRearAccuracy(err=REAR_ERR)
+
+lidar_accuracy = assume car.rp.lidar satisfies LidarRearAccuracy(err=REAR_ERR)
+
+fusion_semantics = prove car.rp.fusion satisfies GapFusionSemantics() \
+    using LeanContractProof("LeanLTL/Examples/Scenic/GapFusionSemantics", LEANLTL_LOC, REPL_LOC)
+
+accurate_rear_known_raw = compose over car.rp:
+    use radar_accuracy
+    use lidar_accuracy
+    use fusion_semantics
+
+accurate_rear_known = refine accurate_rear_known_raw as AccurateRearGapKnownConds(err=REAR_ERR) \
+    using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateRearGapKnownRefinement", LEANLTL_LOC, REPL_LOC)
+
+accurate_rear_unknown = test car.rp satisfies AccurateRearGapUnknownConds(err=REAR_ERR),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+    terminating after TIME_LIMIT seconds
+
+accurate_rear_raw = weak merge over car.rp:
+    use accurate_rear_known
+    use accurate_rear_unknown
+
+accurate_rear = refine accurate_rear_raw as AccurateRearGap(err=REAR_ERR) \
+    using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateRearGapRefinement", LEANLTL_LOC, REPL_LOC)
+
+# Remaining perception
+accurate_front = test car.fc satisfies AccurateFrontGap(err=FRONT_ERR),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+    terminating after TIME_LIMIT seconds
+
+accurate_progress = assume car.mps satisfies AccurateProgress()
+
+# Decision components: proved semantics.
+acceptance_semantics = prove car.gal satisfies GapAcceptanceSemantics(
+    MIN_FRONT_GAP,
+    MIN_REAR_GAP,
+    REACTION_TIME) \
+    using LeanContractProof("LeanLTL/Examples/Scenic/GapAcceptanceSemantics", LEANLTL_LOC, REPL_LOC)
+
+governor_safety = prove car.mg satisfies MergeGovernorSafety(COMMIT_THRESHOLD) \
+    using LeanContractProof("LeanLTL/Examples/Scenic/MergeGovernorSafety", LEANLTL_LOC, REPL_LOC)
+
+# Actuation link between the merge command and physical lateral progress.
+merge_actuation = assume car.act satisfies MergeActuationLimits(PROGRESS_SLACK), \
+    with correctness 0.99, with confidence 0.999
+
+# Top-level safety: compose everything and refine.
+safe_merge_raw = compose over car:
+    use accurate_rear
+    use accurate_front
+    use accurate_progress
+    use acceptance_semantics
+    use governor_safety
+    use merge_actuation
+
+safe_merge = refine safe_merge_raw as SafeMerge(
+    MIN_FRONT_GAP,
+    MIN_REAR_GAP,
+    COMMIT_THRESHOLD,
+    FRONT_ERR,
+    REAR_ERR,
+    PROGRESS_SLACK) \
+    using LeanRefinementProof("LeanLTL/Examples/Scenic/SafeMergeRefinement", LEANLTL_LOC, REPL_LOC)
+
+verify safe_merge
+
+# Top-level liveness: the merge eventually completes.
+eventually_merges = test car satisfies EventuallyMerges(MERGE_DONE),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=900, confidence=0.95, batchSize=1, verbose=True),
+    terminating after TIME_LIMIT seconds
+
+verify eventually_merges
