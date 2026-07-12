@@ -582,7 +582,7 @@ class SimulationTestingContractResult(TestingContractResult):
     @property
     def _source_info(self):
         return (f"Scenario '{Path(self.source.filename).name if self.source else 'NONE'}"
-                f" (Hash={int.from_bytes(self.source.astHash) if self.source else 'NONE'})")
+                f" (Hash={int.from_bytes(self.source.astHash, byteorder='big') if self.source else 'NONE'})")
 
 @enum.unique
 class TestResult(enum.Enum):
