@@ -38,16 +38,14 @@ abbrev IA0 := LLTL[((((←params__visibility__)) = (0)) ∧ (((←params__weathe
 abbrev i_assumptions : TraceSet TraceState := LLTL[IA0]
 
 -- Internal Guarantees
-abbrev IG0 := LLTL[((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))) → (𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←rear_gap))) ∧ (((←rear_gap)) ≤ (((←self.rearGap)) + (0.5)))))]
-abbrev IG1 := LLTL[((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))) → (𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (0.5)))))]
-abbrev IG2 := LLTL[((¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1)))) ∧ (¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))))) → (𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←rear_gap))) ∧ (((←rear_gap)) ≤ (((←self.rearGap)) + (0.5)))))]
-abbrev IG3 := LLTL[((¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1)))) ∧ (¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))))) → (𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (0.5)))))]
+abbrev IG0 := LLTL[((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))) → ((𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←rear_gap))) ∧ (((←rear_gap)) ≤ (((←self.rearGap)) + (0.5))))) ∧ (𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (2.0))))))]
+abbrev IG1 := LLTL[((¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1)))) ∧ (¬((((←params__visibility__)) = (0)) ∧ (((←params__weather__)) ≤ (1))))) → ((𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←rear_gap))) ∧ (((←rear_gap)) ≤ (((←self.rearGap)) + (0.5))))) ∧ (𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (2.0))))))]
 
-abbrev i_guarantees : TraceSet TraceState := LLTL[IG0 ∧ IG1 ∧ IG2 ∧ IG3]
+abbrev i_guarantees : TraceSet TraceState := LLTL[IG0 ∧ IG1]
 
 -- Top Level Guarantees
 abbrev G0 := LLTL[𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←rear_gap))) ∧ (((←rear_gap)) ≤ (((←self.rearGap)) + (0.5))))]
-abbrev G1 := LLTL[𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (0.5))))]
+abbrev G1 := LLTL[𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←rear_closing))) ∧ (((←rear_closing)) ≤ (((←self.rearClosing)) + (2.0))))]
 
 abbrev guarantees : TraceSet TraceState := LLTL[G0 ∧ G1]
 

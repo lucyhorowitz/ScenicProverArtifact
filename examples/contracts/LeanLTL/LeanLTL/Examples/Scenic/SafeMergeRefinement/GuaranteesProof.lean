@@ -27,18 +27,15 @@ theorem imp_guarantees : LLTL[(assumptions ∧ i_guarantees)] ⇒ LLTL[guarantee
   simp only [IG0, IG1, IG2, IG3, IG4, IG5, IG6, IG7, IG8, IG9] at *
   simp only [guarantees, G0]
   simp [push_ltl] at hIG0 hIG1 hIG2 hIG3 hIG5 hIG6 hIG7 hIG9 ⊢
-  -- NOTE: if the intro pattern below does not match, inspect the goal after the simp
-  -- above; the strong-next in the antecedent should have been curried into a value x
-  -- for the merge progress at step n+1 together with a length fact and defining equation.
-  intro n h_n x h_n1 h_x h_jump h_precommit
+  -- After the simp above the goal is fully curried: length fact, the progress jump at
+  -- index (1 + n), and the precommit bound arrive as separate hypotheses.
+  intro n h_n h_len h_jump h_precommit
   -- Step 1: the merge command at step n must be 1.
   have h6 := hIG6 n h_n
   have hcmd : (t.toFun! n).N5 = 1.0 := by
     rcases h6 with h60 | h61
     · exfalso
-      have h9 := hIG9 n h_n h60
-      obtain ⟨y, ⟨-, h_y⟩, h_le⟩ := h9
-      have hxy : y = x := by rw [← h_y, h_x]
+      obtain ⟨y, ⟨-, rfl⟩, h_le⟩ := hIG9 n h_n h60
       linarith
     · exact h61
   -- Step 2: the gap must have been accepted (merge_ok ≥ 1).

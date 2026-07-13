@@ -39,7 +39,7 @@ def ComponentFunc (t: TraceState) : FuncOutput :=
         let hold := (0.0) ⊔ ((hold) - (1.0));
         {N1 := (0.0), N0 := (hold)}
       else
-        let hold := 10;
+        let hold := 10.0;
         {N1 := (0.0), N0 := (hold)}
 
 

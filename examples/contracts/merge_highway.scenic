@@ -25,7 +25,7 @@ from scenic.contracts.utils import leadDistance
 ## Constants ##
 LANE_WIDTH_EST = 3.5      # nominal lateral separation between adjacent lane centerlines
 STEER_LOOKAHEAD = 10      # lookahead distance (m) for the merge steering reference
-MAX_GAP = 250             # reported gap when no vehicle is relevant
+MAX_GAP = 250.0           # reported gap when no vehicle is relevant (float: sensor-typed)
 
 # Initial longitudinal layout (all gaps in meters, measured along the road)
 TOTAL_TARGET_GAP = 70                 # gap leader to gap follower separation

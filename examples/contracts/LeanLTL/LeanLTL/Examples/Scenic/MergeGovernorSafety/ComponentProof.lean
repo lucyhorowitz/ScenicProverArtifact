@@ -9,7 +9,7 @@ namespace MergeGovernorSafety
 theorem imp_assumptions : LLTL[fprops] ⇒ LLTL[assumptions → guarantees] := by
   intro t hF
   simp only [sat_imp_iff]
-  intro -
+  intro _
   simp only [fprops, F0, F1, F2, sat_and_iff] at hF
   obtain ⟨-, hF1, -⟩ := hF
   simp only [guarantees, G0, G1, G2, sat_and_iff]

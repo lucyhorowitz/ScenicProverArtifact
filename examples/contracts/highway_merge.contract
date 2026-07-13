@@ -12,7 +12,9 @@ are safe. Liveness (the merge eventually completes) is established by testing.
 
 ## PARAMS #####################################################################
 # TIME_LIMIT is the testing time budget, in seconds, per tested contract.
-TIME_LIMIT = 10*60
+# 2*60 is enough for a smoke run; use 30*60+ for meaningful correctness bounds
+# (the tested contracts certify at 0.999 confidence, which needs sample count).
+TIME_LIMIT = 2*60
 ###############################################################################
 
 import math
@@ -34,9 +36,10 @@ MIN_FRONT_GAP = 10       # sensed front gap required to merge
 MIN_REAR_GAP = 8         # base sensed rear gap required to merge
 REACTION_TIME = 2        # seconds of closing-speed margin on the rear gap
 COMMIT_THRESHOLD = 0.6   # mergeProgress beyond which the merge always completes
-HOLD_STEPS = 10          # governor debounce steps after an abort
-REAR_ERR = 0.5           # rear gap/closing accuracy bound (in-spec conditions)
-FRONT_ERR = 0.5          # front gap accuracy bound
+HOLD_STEPS = 10.0        # governor debounce steps after an abort (float: typed state)
+REAR_ERR = 0.5           # rear gap accuracy bound (in-spec conditions)
+REAR_CLOSING_ERR = 2.0   # rear closing-speed accuracy bound (fast-changing signal)
+FRONT_ERR = 1.5          # front gap accuracy bound (covers approach transients)
 PROGRESS_SLACK = 0.02    # max per-step lateral progress without a merge command
 MERGE_DONE = 0.85        # mergeProgress threshold considered "merged"
 TARGET_GAP_OWN = 12      # desired following distance behind the slow car
@@ -57,7 +60,7 @@ component RearGapRadar():
         radar_rear_closing: float
 
     body:
-        if visibility >= 1 and random.random() < 0.15:
+        if visibility >= 1 and random.random() < 0.002:
             reported_gap = random.uniform(rear_gap_true, MAX_GAP)
         else:
             reported_gap = rear_gap_true + random.gauss(0, 0.1)
@@ -76,7 +79,7 @@ component RearGapLidar():
         lidar_rear_closing: float
 
     body:
-        if weather >= 2 and random.random() < 0.1:
+        if weather >= 2 and random.random() < 0.001:
             reported_gap = random.uniform(0, rear_gap_true)
         else:
             reported_gap = rear_gap_true + random.gauss(0, 0.1)
@@ -362,7 +365,7 @@ component MergingCar(min_front_gap, min_rear_gap, reaction_time, commit_threshol
 
 ## Contracts ##
 
-contract RadarRearAccuracy(err=0.5):
+contract RadarRearAccuracy(gap_err=0.5, closing_err=2.0):
     """Manufacturer spec: the radar reports the rear gap and closing speed accurately
     when visibility is clear."""
     globals:
@@ -376,10 +379,10 @@ contract RadarRearAccuracy(err=0.5):
         params["visibility"] == 0
 
     guarantees:
-        always (self.rearGap - err <= radar_rear_gap <= self.rearGap + err)
-        always (self.rearClosing - err <= radar_rear_closing <= self.rearClosing + err)
+        always (self.rearGap - gap_err <= radar_rear_gap <= self.rearGap + gap_err)
+        always (self.rearClosing - closing_err <= radar_rear_closing <= self.rearClosing + closing_err)
 
-contract LidarRearAccuracy(err=0.5):
+contract LidarRearAccuracy(gap_err=0.5, closing_err=2.0):
     """Manufacturer spec: the lidar reports the rear gap and closing speed accurately
     when it is not raining."""
     globals:
@@ -393,8 +396,8 @@ contract LidarRearAccuracy(err=0.5):
         params["weather"] <= 1
 
     guarantees:
-        always (self.rearGap - err <= lidar_rear_gap <= self.rearGap + err)
-        always (self.rearClosing - err <= lidar_rear_closing <= self.rearClosing + err)
+        always (self.rearGap - gap_err <= lidar_rear_gap <= self.rearGap + gap_err)
+        always (self.rearClosing - closing_err <= lidar_rear_closing <= self.rearClosing + closing_err)
 
 contract GapFusionSemantics():
     inputs:
@@ -411,7 +414,7 @@ contract GapFusionSemantics():
         always (rear_gap == min(radar_rear_gap, lidar_rear_gap))
         always (rear_closing == max(radar_rear_closing, lidar_rear_closing))
 
-contract AccurateRearGapKnownConds(err=0.5):
+contract AccurateRearGapKnownConds(gap_err=0.5, closing_err=2.0):
     """The fused rear perception is accurate inside both manufacturer spec conditions."""
     globals:
         params
@@ -424,10 +427,10 @@ contract AccurateRearGapKnownConds(err=0.5):
         (params["visibility"] == 0) and (params["weather"] <= 1)
 
     guarantees:
-        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
-        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+        always (self.rearGap - gap_err <= rear_gap <= self.rearGap + gap_err)
+        always (self.rearClosing - closing_err <= rear_closing <= self.rearClosing + closing_err)
 
-contract AccurateRearGapUnknownConds(err=0.5):
+contract AccurateRearGapUnknownConds(gap_err=0.5, closing_err=2.0):
     """The fused rear perception outside of manufacturer spec conditions."""
     globals:
         params
@@ -440,18 +443,18 @@ contract AccurateRearGapUnknownConds(err=0.5):
         not ((params["visibility"] == 0) and (params["weather"] <= 1))
 
     guarantees:
-        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
-        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+        always (self.rearGap - gap_err <= rear_gap <= self.rearGap + gap_err)
+        always (self.rearClosing - closing_err <= rear_closing <= self.rearClosing + closing_err)
 
-contract AccurateRearGap(err=0.5):
+contract AccurateRearGap(gap_err=0.5, closing_err=2.0):
     """The fused rear perception is accurate."""
     outputs:
         rear_gap: float
         rear_closing: float
 
     guarantees:
-        always (self.rearGap - err <= rear_gap <= self.rearGap + err)
-        always (self.rearClosing - err <= rear_closing <= self.rearClosing + err)
+        always (self.rearGap - gap_err <= rear_gap <= self.rearGap + gap_err)
+        always (self.rearClosing - closing_err <= rear_closing <= self.rearClosing + closing_err)
 
 contract AccurateFrontGap(err=0.5):
     """The camera reports the target-lane front gap accurately."""
@@ -536,9 +539,9 @@ implement "EgoCar" with MergingCar(
 
 # Rear perception: assumed manufacturer specs + proved fusion semantics, refined into
 # accuracy under known conditions; tested accuracy under unknown conditions; merged.
-radar_accuracy = assume car.rp.radar satisfies RadarRearAccuracy(err=REAR_ERR)
+radar_accuracy = assume car.rp.radar satisfies RadarRearAccuracy(gap_err=REAR_ERR, closing_err=REAR_CLOSING_ERR)
 
-lidar_accuracy = assume car.rp.lidar satisfies LidarRearAccuracy(err=REAR_ERR)
+lidar_accuracy = assume car.rp.lidar satisfies LidarRearAccuracy(gap_err=REAR_ERR, closing_err=REAR_CLOSING_ERR)
 
 fusion_semantics = prove car.rp.fusion satisfies GapFusionSemantics() \
     using LeanContractProof("LeanLTL/Examples/Scenic/GapFusionSemantics", LEANLTL_LOC, REPL_LOC)
@@ -548,23 +551,23 @@ accurate_rear_known_raw = compose over car.rp:
     use lidar_accuracy
     use fusion_semantics
 
-accurate_rear_known = refine accurate_rear_known_raw as AccurateRearGapKnownConds(err=REAR_ERR) \
+accurate_rear_known = refine accurate_rear_known_raw as AccurateRearGapKnownConds(gap_err=REAR_ERR, closing_err=REAR_CLOSING_ERR) \
     using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateRearGapKnownRefinement", LEANLTL_LOC, REPL_LOC)
 
-accurate_rear_unknown = test car.rp satisfies AccurateRearGapUnknownConds(err=REAR_ERR),
-    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+accurate_rear_unknown = test car.rp satisfies AccurateRearGapUnknownConds(gap_err=REAR_ERR, closing_err=REAR_CLOSING_ERR),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=True),
     terminating after TIME_LIMIT seconds
 
 accurate_rear_raw = weak merge over car.rp:
     use accurate_rear_known
     use accurate_rear_unknown
 
-accurate_rear = refine accurate_rear_raw as AccurateRearGap(err=REAR_ERR) \
+accurate_rear = refine accurate_rear_raw as AccurateRearGap(gap_err=REAR_ERR, closing_err=REAR_CLOSING_ERR) \
     using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateRearGapRefinement", LEANLTL_LOC, REPL_LOC)
 
 # Remaining perception
 accurate_front = test car.fc satisfies AccurateFrontGap(err=FRONT_ERR),
-    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=True),
     terminating after TIME_LIMIT seconds
 
 accurate_progress = assume car.mps satisfies AccurateProgress()

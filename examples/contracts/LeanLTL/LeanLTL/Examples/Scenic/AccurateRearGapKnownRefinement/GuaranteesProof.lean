@@ -21,17 +21,19 @@ theorem imp_guarantees : LLTL[(assumptions ∧ i_guarantees)] ⇒ LLTL[guarantee
     have h0 := hIG0 n h_n
     have h2 := hIG2 n h_n
     have h4 := hIG4 n h_n
-    rw [h4]
-    constructor
-    · exact le_inf h0.1 h2.1
-    · exact le_trans inf_le_left h0.2
+    rcases le_total ((t.toFun! n).N0) ((t.toFun! n).N2) with hle | hle
+    · rw [h4, inf_eq_left.mpr hle]
+      constructor <;> linarith [h0.1, h0.2, h2.1, h2.2]
+    · rw [h4, inf_eq_right.mpr hle]
+      constructor <;> linarith [h0.1, h0.2, h2.1, h2.2]
   · -- fused rear closing speed stays within the accuracy band (max of two in-band values)
     simp [push_ltl] at hIG1 hIG3 hIG5 ⊢
     intro n h_n
     have h1 := hIG1 n h_n
     have h3 := hIG3 n h_n
     have h5 := hIG5 n h_n
-    rw [h5]
-    constructor
-    · exact le_trans h1.1 le_sup_left
-    · exact sup_le h1.2 h3.2
+    rcases le_total ((t.toFun! n).N1) ((t.toFun! n).N3) with hle | hle
+    · rw [h5, sup_eq_right.mpr hle]
+      constructor <;> linarith [h1.1, h1.2, h3.1, h3.2]
+    · rw [h5, sup_eq_left.mpr hle]
+      constructor <;> linarith [h1.1, h1.2, h3.1, h3.2]

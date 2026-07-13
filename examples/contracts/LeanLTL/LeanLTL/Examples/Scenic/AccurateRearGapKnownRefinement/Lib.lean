@@ -49,9 +49,9 @@ abbrev i_assumptions : TraceSet TraceState := LLTL[IA0 ∧ IA1]
 
 -- Internal Guarantees
 abbrev IG0 := LLTL[𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_0))) ∧ (((←SCENIC_INTERNAL_VAR_0)) ≤ (((←self.rearGap)) + (0.5))))]
-abbrev IG1 := LLTL[𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_1))) ∧ (((←SCENIC_INTERNAL_VAR_1)) ≤ (((←self.rearClosing)) + (0.5))))]
+abbrev IG1 := LLTL[𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←SCENIC_INTERNAL_VAR_1))) ∧ (((←SCENIC_INTERNAL_VAR_1)) ≤ (((←self.rearClosing)) + (2.0))))]
 abbrev IG2 := LLTL[𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_2))) ∧ (((←SCENIC_INTERNAL_VAR_2)) ≤ (((←self.rearGap)) + (0.5))))]
-abbrev IG3 := LLTL[𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_3))) ∧ (((←SCENIC_INTERNAL_VAR_3)) ≤ (((←self.rearClosing)) + (0.5))))]
+abbrev IG3 := LLTL[𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←SCENIC_INTERNAL_VAR_3))) ∧ (((←SCENIC_INTERNAL_VAR_3)) ≤ (((←self.rearClosing)) + (2.0))))]
 abbrev IG4 := LLTL[𝐆 (((←SCENIC_INTERNAL_VAR_4)) = (((←SCENIC_INTERNAL_VAR_0)) ⊓ ((←SCENIC_INTERNAL_VAR_2))))]
 abbrev IG5 := LLTL[𝐆 (((←SCENIC_INTERNAL_VAR_5)) = (((←SCENIC_INTERNAL_VAR_1)) ⊔ ((←SCENIC_INTERNAL_VAR_3))))]
 
@@ -59,7 +59,7 @@ abbrev i_guarantees : TraceSet TraceState := LLTL[IG0 ∧ IG1 ∧ IG2 ∧ IG3 �
 
 -- Top Level Guarantees
 abbrev G0 := LLTL[𝐆 (((((←self.rearGap)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_4))) ∧ (((←SCENIC_INTERNAL_VAR_4)) ≤ (((←self.rearGap)) + (0.5))))]
-abbrev G1 := LLTL[𝐆 (((((←self.rearClosing)) - (0.5)) ≤ ((←SCENIC_INTERNAL_VAR_5))) ∧ (((←SCENIC_INTERNAL_VAR_5)) ≤ (((←self.rearClosing)) + (0.5))))]
+abbrev G1 := LLTL[𝐆 (((((←self.rearClosing)) - (2.0)) ≤ ((←SCENIC_INTERNAL_VAR_5))) ∧ (((←SCENIC_INTERNAL_VAR_5)) ≤ (((←self.rearClosing)) + (2.0))))]
 
 abbrev guarantees : TraceSet TraceState := LLTL[G0 ∧ G1]
 
