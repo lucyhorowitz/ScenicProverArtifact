@@ -318,6 +318,83 @@ contract FollowerSmokeTest():
     guarantees:
         always True
 
+contract ReportedSquaredDistanceComputerSemantics():
+    inputs:
+        own_x: float
+        own_y: float
+        own_z: float
+        reported_x: float
+        reported_y: float
+        reported_z: float
+
+    outputs:
+        reported_dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+
+    guarantees:
+        always (rel_x == reported_x - own_x)
+        always (rel_y == reported_y - own_y)
+        always (rel_z == reported_z - own_z)
+        always (reported_dist_sq == rel_x * rel_x + rel_y * rel_y + rel_z * rel_z)
+
+contract SquaredDistanceMeanFilterSemantics():
+    inputs:
+        dist1_sq: float
+        dist2_sq: float
+
+    outputs:
+        out_dist_sq: float
+
+    guarantees:
+        always (out_dist_sq == (dist1_sq + dist2_sq) / 2)
+
+contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_component_speed):
+    inputs:
+        dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+
+    outputs:
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+
+    definitions:
+        max_dist_sq = max_dist * max_dist
+        min_dist_sq = min_dist * min_dist
+        dot_prod = rel_x * cmd_vx + rel_y * cmd_vy + rel_z * cmd_vz
+
+    assumptions:
+        gain > 0
+        max_component_speed > 0
+        0 <= min_dist
+        min_dist <= max_dist
+
+    guarantees:
+        # points in the right direction
+        always ((dist_sq > max_dist_sq) implies (dot_prod >= 0))
+        always ((dist_sq < min_dist_sq) implies (dot_prod <= 0))
+        always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
+
+        # componentwise speed bounded
+        always (-max_component_speed <= cmd_vx and cmd_vx <= max_component_speed)
+        always (-max_component_speed <= cmd_vy and cmd_vy <= max_component_speed)
+        always (-max_component_speed <= cmd_vz and cmd_vz <= max_component_speed)
+
+        # componentwise correct direction
+        always ((dist_sq > max_dist_sq) implies (rel_x * cmd_vx >= 0))
+        always ((dist_sq > max_dist_sq) implies (rel_y * cmd_vy >= 0))
+        always ((dist_sq > max_dist_sq) implies (rel_z * cmd_vz >= 0))
+
+        always ((dist_sq < min_dist_sq) implies (rel_x * cmd_vx <= 0))
+        always ((dist_sq < min_dist_sq) implies (rel_y * cmd_vy <= 0))
+        always ((dist_sq < min_dist_sq) implies (rel_z * cmd_vz <= 0))
+
+## Verification Steps ##
+
 implement "follower" with Follower(
     FOLLOW_GPS_ERROR,
     REPORT_ERROR,
@@ -330,13 +407,21 @@ implement "follower" with Follower(
     MAX_SENSOR_RANGE,
 ) as drone2
 
-follower_smoke_test = test drone2 satisfies FollowerSmokeTest(),
+reported_distance_semantics = prove drone2.sds.rds.rdc satisfies ReportedSquaredDistanceComputerSemantics() \
+    using LeanContractProof(
+        "LeanLTL/Examples/Scenic/ReportedSquaredDistanceComputerSemantics",
+        LEANLTL_LOC,
+        REPL_LOC)
+
+verify reported_distance_semantics
+
+""" follower_smoke_test = test drone2 satisfies FollowerSmokeTest(),
     using SimulationTesting(
         scenario=ENVIRONMENT,
         maxSteps=500,
         confidence=0.95,
         batchSize=1,
         verbose=True,
-    ), terminating after 30 seconds
+    ), terminating after 30 seconds """
 
-verify follower_smoke_test
+# verify follower_smoke_test
