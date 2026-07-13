@@ -209,9 +209,10 @@ component AvailabilitySystem(gps_avail: bool, perception_avail: bool):
                 "valid": False,
             }
 
-component SquaredDistanceSystem(perception_error: float, gps_available=True, perception_available=True):
+component RelativePositionSystem(perception_error: float, gps_available=True, perception_available=True):
+    """Produces the selected relative position (and its validity) by choosing
+    among the report-based and perception-based sources."""
     outputs:
-        dist_sq: float
         rel_x: float
         rel_y: float
         rel_z: float
@@ -221,7 +222,6 @@ component SquaredDistanceSystem(perception_error: float, gps_available=True, per
         rrps = ReportedRelativePositionSystem()
         ps = PositionSensor(perception_error)
         avail = AvailabilitySystem(gps_available, perception_available)
-        smc = SquaredMagnitudeComputer()
 
         connect rrps.rel_x to avail.reported_rel_x
         connect rrps.rel_y to avail.reported_rel_y
@@ -236,9 +236,26 @@ component SquaredDistanceSystem(perception_error: float, gps_available=True, per
         connect avail.rel_z to rel_z
         connect avail.valid to valid
 
-        connect avail.rel_x to smc.rel_x
-        connect avail.rel_y to smc.rel_y
-        connect avail.rel_z to smc.rel_z
+component SquaredDistanceSystem(perception_error: float, gps_available=True, perception_available=True):
+    outputs:
+        dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    compose:
+        rps = RelativePositionSystem(perception_error, gps_available, perception_available)
+        smc = SquaredMagnitudeComputer()
+
+        connect rps.rel_x to rel_x
+        connect rps.rel_y to rel_y
+        connect rps.rel_z to rel_z
+        connect rps.valid to valid
+
+        connect rps.rel_x to smc.rel_x
+        connect rps.rel_y to smc.rel_y
+        connect rps.rel_z to smc.rel_z
         connect smc.dist_sq to dist_sq
 
 
@@ -340,24 +357,43 @@ component DroneActionControls():
 
         connect ag.velocity_action to dc.velocity_action
 
+component FollowerControlSystem(min_dist, max_dist, gain, max_component_speed):
+    """Turns the relative position (and validity) into a velocity command and
+    the corresponding drone action."""
+    inputs:
+        dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    compose:
+        fc = FollowerController(min_dist, max_dist, gain, max_component_speed)
+        dac = DroneActionControls()
+
+        connect dist_sq to fc.dist_sq
+        connect rel_x to fc.rel_x
+        connect rel_y to fc.rel_y
+        connect rel_z to fc.rel_z
+        connect valid to fc.valid
+
+        connect fc.cmd_vx to dac.cmd_vx
+        connect fc.cmd_vy to dac.cmd_vy
+        connect fc.cmd_vz to dac.cmd_vz
+
 component Follower(perception_error: float,
         min_dist: float, max_dist: float, gain: float, max_component_speed: float,
         gps_available=True, perception_available=True):
     """This is the whole drone!"""
     compose:
         sds = SquaredDistanceSystem(perception_error, gps_available, perception_available)
-        fc = FollowerController(min_dist, max_dist, gain, max_component_speed)
-        dac = DroneActionControls()
+        fcs = FollowerControlSystem(min_dist, max_dist, gain, max_component_speed)
 
-        connect sds.dist_sq to fc.dist_sq
-        connect sds.rel_x to fc.rel_x
-        connect sds.rel_y to fc.rel_y
-        connect sds.rel_z to fc.rel_z
-        connect sds.valid to fc.valid
-
-        connect fc.cmd_vx to dac.cmd_vx
-        connect fc.cmd_vy to dac.cmd_vy
-        connect fc.cmd_vz to dac.cmd_vz
+        connect sds.dist_sq to fcs.dist_sq
+        connect sds.rel_x to fcs.rel_x
+        connect sds.rel_y to fcs.rel_y
+        connect sds.rel_z to fcs.rel_z
+        connect sds.valid to fcs.valid
 
 ## Contracts ##
 
