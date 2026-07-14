@@ -15,6 +15,8 @@ MIN_FOLLOW_DIST = 5.0
 MAX_FOLLOW_DIST = 15.0
 FOLLOW_GAIN = 0.2
 MAX_COMPONENT_SPEED = 3.0
+# Leader (drone1) runs Patrol(..., speed=2) in followPatrol.scenic; timestep is 0.1.
+MAX_LEADER_SPEED = 2.0
 # To produce all the results needed to generate a similar figure to the one in
 # our paper, you will want to run experiments with TIME_LIMIT set to
 # 1*60, 5*60, 15*60, 30*60, 60*60, 2*60*60, 4*60*60, and 8*60*60
@@ -169,9 +171,13 @@ component GPS():
             "gps_z": gps_z,
         }
 
-component AvailabilitySystem(gps_avail: bool, perception_avail: bool):
+component AvailabilitySystem():
     """Selects a position source using availability fixed for the whole run.
     Future work should allow availability to change dynamically at each step."""
+    sensors:
+        self.gps_available: bool as gps_avail
+        self.perception_available: bool as perception_avail
+
     inputs:
         reported_rel_x: float
         reported_rel_y: float
@@ -209,7 +215,7 @@ component AvailabilitySystem(gps_avail: bool, perception_avail: bool):
                 "valid": False,
             }
 
-component RelativePositionSystem(perception_error: float, gps_available=True, perception_available=True):
+component RelativePositionSystem(perception_error: float):
     """Produces the selected relative position (and its validity) by choosing
     among the report-based and perception-based sources."""
     outputs:
@@ -221,7 +227,7 @@ component RelativePositionSystem(perception_error: float, gps_available=True, pe
     compose:
         rrps = ReportedRelativePositionSystem()
         ps = PositionSensor(perception_error)
-        avail = AvailabilitySystem(gps_available, perception_available)
+        avail = AvailabilitySystem()
 
         connect rrps.rel_x to avail.reported_rel_x
         connect rrps.rel_y to avail.reported_rel_y
@@ -236,7 +242,7 @@ component RelativePositionSystem(perception_error: float, gps_available=True, pe
         connect avail.rel_z to rel_z
         connect avail.valid to valid
 
-component SquaredDistanceSystem(perception_error: float, gps_available=True, perception_available=True):
+component SquaredDistanceSystem(perception_error: float):
     outputs:
         dist_sq: float
         rel_x: float
@@ -245,7 +251,7 @@ component SquaredDistanceSystem(perception_error: float, gps_available=True, per
         valid: bool
 
     compose:
-        rps = RelativePositionSystem(perception_error, gps_available, perception_available)
+        rps = RelativePositionSystem(perception_error)
         smc = SquaredMagnitudeComputer()
 
         connect rps.rel_x to rel_x
@@ -382,11 +388,10 @@ component FollowerControlSystem(min_dist, max_dist, gain, max_component_speed):
         connect fc.cmd_vz to dac.cmd_vz
 
 component Follower(perception_error: float,
-        min_dist: float, max_dist: float, gain: float, max_component_speed: float,
-        gps_available=True, perception_available=True):
+        min_dist: float, max_dist: float, gain: float, max_component_speed: float):
     """This is the whole drone!"""
     compose:
-        sds = SquaredDistanceSystem(perception_error, gps_available, perception_available)
+        sds = SquaredDistanceSystem(perception_error)
         fcs = FollowerControlSystem(min_dist, max_dist, gain, max_component_speed)
 
         connect sds.dist_sq to fcs.dist_sq
@@ -396,10 +401,6 @@ component Follower(perception_error: float,
         connect sds.valid to fcs.valid
 
 ## Contracts ##
-
-contract FollowerSmokeTest():
-    guarantees:
-        always True
 
 contract ReportedRelativePositionComputerSemantics():
     inputs:
@@ -432,12 +433,51 @@ contract SquaredMagnitudeComputerSemantics():
     guarantees:
         always (dist_sq == rel_x * rel_x + rel_y * rel_y + rel_z * rel_z)
 
+contract AvailabilitySystemSemantics():
+    inputs:
+        reported_rel_x: float
+        reported_rel_y: float
+        reported_rel_z: float
+        per_x: float
+        per_y: float
+        per_z: float
+
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    guarantees:
+        always ((self.gps_available or self.perception_available) implies valid)
+        always (valid implies (self.gps_available or self.perception_available))
+
+        always (self.gps_available implies (
+            rel_x == reported_rel_x
+            and rel_y == reported_rel_y
+            and rel_z == reported_rel_z
+        ))
+        always ((self.perception_available and not self.gps_available) implies (
+            rel_x == per_x
+            and rel_y == per_y
+            and rel_z == per_z
+        ))
+        always ((not self.gps_available and not self.perception_available) implies (
+            rel_x == 0.0
+            and rel_y == 0.0
+            and rel_z == 0.0
+            and not valid
+        ))
+
 contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_component_speed):
+    """A weaker version of FollowerControllerSemantics which only proves things
+    about the direction rather than the specific vector values"""
     inputs:
         dist_sq: float
         rel_x: float
         rel_y: float
         rel_z: float
+        valid: bool
 
     outputs:
         cmd_vx: float
@@ -457,8 +497,8 @@ contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_compo
 
     guarantees:
         # points in the right direction
-        always ((dist_sq > max_dist_sq) implies (dot_prod >= 0))
-        always ((dist_sq < min_dist_sq) implies (dot_prod <= 0))
+        always ((valid and dist_sq > max_dist_sq) implies (dot_prod >= 0))
+        always ((valid and dist_sq < min_dist_sq) implies (dot_prod <= 0))
         always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
 
         # componentwise speed bounded
@@ -466,14 +506,250 @@ contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_compo
         always (-max_component_speed <= cmd_vy and cmd_vy <= max_component_speed)
         always (-max_component_speed <= cmd_vz and cmd_vz <= max_component_speed)
 
-        # componentwise correct direction
-        always ((dist_sq > max_dist_sq) implies (rel_x * cmd_vx >= 0))
-        always ((dist_sq > max_dist_sq) implies (rel_y * cmd_vy >= 0))
-        always ((dist_sq > max_dist_sq) implies (rel_z * cmd_vz >= 0))
+        # invalid implies hover
+        always ((not valid) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
 
-        always ((dist_sq < min_dist_sq) implies (rel_x * cmd_vx <= 0))
-        always ((dist_sq < min_dist_sq) implies (rel_y * cmd_vy <= 0))
-        always ((dist_sq < min_dist_sq) implies (rel_z * cmd_vz <= 0))
+contract FollowerControllerSemantics(min_dist, max_dist, gain, max_component_speed):
+    inputs:
+        dist_sq: float
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    outputs:
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+
+    definitions:
+        max_dist_sq = max_dist * max_dist
+        min_dist_sq = min_dist * min_dist
+
+    assumptions:
+        gain > 0
+        max_component_speed > 0
+        0 <= min_dist
+        min_dist <= max_dist
+
+    guarantees:
+        always ((not valid) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
+        always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
+        always ((valid and dist_sq < min_dist_sq) implies (cmd_vx == min(max(-gain * rel_x, -max_component_speed), max_component_speed)
+            and cmd_vy == min(max(-gain * rel_y, -max_component_speed), max_component_speed)
+            and cmd_vz == min(max(-gain * rel_z, -max_component_speed), max_component_speed)))
+        always ((valid and dist_sq > max_dist_sq) implies (cmd_vx == min(max(gain * rel_x, -max_component_speed), max_component_speed)
+            and cmd_vy == min(max(gain * rel_y, -max_component_speed), max_component_speed)
+            and cmd_vz == min(max(gain * rel_z, -max_component_speed), max_component_speed)))
+
+contract GPSAccurate():
+    outputs:
+        gps_x: float
+        gps_y: float
+        gps_z: float
+
+    guarantees:
+        always (self.position.x == gps_x and self.position.y == gps_y and self.position.z == gps_z)
+
+contract PositionReportReceiverAccurate():
+    outputs:
+        reported_x: float
+        reported_y: float
+        reported_z: float
+
+    guarantees:
+        always (self.leadPos.x == reported_x and self.leadPos.y == reported_y and self.leadPos.z == reported_z)
+
+contract PositionSensorAccuracy(perception_error):
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+
+    assumptions:
+        perception_error >= 0
+
+    guarantees:
+        always (((self.leadPos.x - self.position.x) - perception_error <= rel_x)
+            and (rel_x <= (self.leadPos.x - self.position.x) + perception_error))
+        always (((self.leadPos.y - self.position.y) - perception_error <= rel_y)
+            and (rel_y <= (self.leadPos.y - self.position.y) + perception_error))
+        always (((self.leadPos.z - self.position.z) - perception_error <= rel_z)
+            and (rel_z <= (self.leadPos.z - self.position.z) + perception_error))
+
+contract RelativePositionAccuracyGPS():
+    """GPS-up branch of the perception guarantee: when GPS is available the
+    selected relative position is EXACT (report path is noiseless). Proven by
+    composing the reported-path accuracy with the availability semantics."""
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    assumptions:
+        always self.gps_available
+
+    guarantees:
+        always valid
+        always (rel_x == self.leadPos.x - self.position.x)
+        always (rel_y == self.leadPos.y - self.position.y)
+        always (rel_z == self.leadPos.z - self.position.z)
+
+contract RelativePositionAccuracyNoGPS(perception_error):
+    """GPS-down branch: with GPS unavailable the selected relative position comes
+    from the noisy perception sensor (within perception_error of truth) when
+    perception is up, and is invalid when perception is also down. Established by
+    simulation testing."""
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    assumptions:
+        always (not self.gps_available)
+        perception_error >= 0
+
+    guarantees:
+        # perception up: bounded-error relative position from the sensor
+        always (self.perception_available implies (
+            valid
+            and ((self.leadPos.x - self.position.x) - perception_error <= rel_x)
+            and (rel_x <= (self.leadPos.x - self.position.x) + perception_error)
+            and ((self.leadPos.y - self.position.y) - perception_error <= rel_y)
+            and (rel_y <= (self.leadPos.y - self.position.y) + perception_error)
+            and ((self.leadPos.z - self.position.z) - perception_error <= rel_z)
+            and (rel_z <= (self.leadPos.z - self.position.z) + perception_error)
+        ))
+        # perception also down: no valid source
+        always ((not self.perception_available) implies (not valid))
+
+contract RelativePositionAccuracy(perception_error):
+    """Clean merged perception guarantee -- the weak merge of the GPS and No-GPS
+    branches, refined to a single contract. While a valid source exists, the
+    selected relative position is within perception_error of the true relative
+    position. This is the contract downstream composes consume (mirrors how
+    highway refines its weak-merge raw into AccurateDistance before composing)."""
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+        valid: bool
+
+    assumptions:
+        perception_error >= 0
+
+    guarantees:
+        always (valid implies ((self.leadPos.x - self.position.x) - perception_error <= rel_x))
+        always (valid implies (rel_x <= (self.leadPos.x - self.position.x) + perception_error))
+        always (valid implies ((self.leadPos.y - self.position.y) - perception_error <= rel_y))
+        always (valid implies (rel_y <= (self.leadPos.y - self.position.y) + perception_error))
+        always (valid implies ((self.leadPos.z - self.position.z) - perception_error <= rel_z))
+        always (valid implies (rel_z <= (self.leadPos.z - self.position.z) + perception_error))
+
+contract VelocityActuation():
+    inputs: 
+        cmd_vx: float
+        cmd_vy: float
+        cmd_vz: float
+    
+    guarantees:
+        always ((next self.velocity.x) == cmd_vx
+            and (next self.velocity.y) == cmd_vy
+            and (next self.velocity.z) == cmd_vz)
+
+contract KeepsFollowDistanceSafety(min_dist, max_dist, timestep=0.1):
+    definitions:
+        # --- squared-distance band thresholds ---
+        max_dist_sq = max_dist * max_dist
+        min_dist_sq = min_dist * min_dist
+
+        # --- ground-truth relative position (leader minus self), this step ---
+        true_rel_x = self.leadPos.x - self.position.x
+        true_rel_y = self.leadPos.y - self.position.y
+        true_rel_z = self.leadPos.z - self.position.z
+        true_dist_sq = true_rel_x * true_rel_x + true_rel_y * true_rel_y + true_rel_z * true_rel_z
+
+        # --- one-step displacement of self, and its alignment with true_rel ---
+        disp_x = (next self.position.x) - self.position.x
+        disp_y = (next self.position.y) - self.position.y
+        disp_z = (next self.position.z) - self.position.z
+        approach_dot = true_rel_x * disp_x + true_rel_y * disp_y + true_rel_z * disp_z
+
+    assumptions:
+        # parameter sanity
+        0 <= min_dist
+        min_dist <= max_dist
+
+        # integration law: one-step displacement is (next velocity) * timestep
+        always ((next self.position.x) == self.position.x + timestep * (next self.velocity.x))
+        always ((next self.position.y) == self.position.y + timestep * (next self.velocity.y))
+        always ((next self.position.z) == self.position.z + timestep * (next self.velocity.z))
+
+    guarantees:
+        always ((true_dist_sq > max_dist_sq) implies (approach_dot >= 0))
+        always ((true_dist_sq < min_dist_sq) implies (approach_dot <= 0))
+
+contract KeepsFollowDistanceLiveness(min_dist, max_dist, gain, max_component_speed, timestep=0.1, max_leader_speed=2.0):
+    definitions:
+        # --- squared-distance band thresholds ---
+        max_dist_sq = max_dist * max_dist
+        min_dist_sq = min_dist * min_dist
+
+        # --- leader per-step displacement bound, derived (never hardcode) ---
+        max_leader_step = max_leader_speed * timestep
+
+        # --- ground-truth squared distance, this step and next ---
+        true_rel_x = self.leadPos.x - self.position.x
+        true_rel_y = self.leadPos.y - self.position.y
+        true_rel_z = self.leadPos.z - self.position.z
+        true_dist_sq = true_rel_x * true_rel_x + true_rel_y * true_rel_y + true_rel_z * true_rel_z
+
+        next_true_rel_x = (next self.leadPos.x) - (next self.position.x)
+        next_true_rel_y = (next self.leadPos.y) - (next self.position.y)
+        next_true_rel_z = (next self.leadPos.z) - (next self.position.z)
+        next_true_dist_sq = next_true_rel_x * next_true_rel_x + next_true_rel_y * next_true_rel_y + next_true_rel_z * next_true_rel_z
+
+        next_lead_disp_x = ((next self.leadPos.x) - self.leadPos.x)
+        next_lead_disp_y = ((next self.leadPos.y) - self.leadPos.y)
+        next_lead_disp_z = ((next self.leadPos.z) - self.leadPos.z)
+
+        next_lead_disp_sq = next_lead_disp_x * next_lead_disp_x + next_lead_disp_y * next_lead_disp_y + next_lead_disp_z * next_lead_disp_z
+
+        min_approach_speed = min(gain * max_dist, max_component_speed)
+        delta_lin = (min_approach_speed - max_leader_speed) * timestep
+        delta_sq = delta_lin * max_dist
+
+    assumptions:
+        # parameter sanity
+        gain > 0
+        max_component_speed > 0
+        0 <= min_dist
+        min_dist <= max_dist
+
+        # margin: the follower can out-approach the leader at the band boundary
+        max_leader_speed < min_approach_speed
+
+        # actuator keeps up with the controller in the band: the clamp is inactive
+        # at the boundary, so min_approach_speed = gain*max_dist is exact (no
+        # per-component clamp distortion of the radial closing speed)
+        gain * max_dist <= max_component_speed
+
+        # integration law (same as safety)
+        always ((next self.position.x) == self.position.x + timestep * (next self.velocity.x))
+        always ((next self.position.y) == self.position.y + timestep * (next self.velocity.y))
+        always ((next self.position.z) == self.position.z + timestep * (next self.velocity.z))
+
+        always next_lead_disp_sq <= max_leader_step * max_leader_step
+
+        always (self.gps_available or self.perception_available)
+
+    guarantees:
+        always ((true_dist_sq > max_dist_sq) implies (next_true_dist_sq <= true_dist_sq - delta_sq))
+        eventually (true_dist_sq <= max_dist_sq)
+        
+        
 
 ## Verification Steps ##
 
@@ -483,20 +759,90 @@ implement "follower" with Follower(
     MAX_FOLLOW_DIST,
     FOLLOW_GAIN,
     MAX_COMPONENT_SPEED,
-    GPS_AVAILABLE,
-    PERCEPTION_AVAILABLE,
 ) as drone2
 
-# TODO: regenerate the Lean proofs for ReportedRelativePositionComputerSemantics
-# and SquaredMagnitudeComputerSemantics after the new selector wiring is complete.
+gps_accurate = assume drone2.sds.rps.rrps.gps satisfies GPSAccurate()
 
-""" follower_smoke_test = test drone2 satisfies FollowerSmokeTest(),
-    using SimulationTesting(
-        scenario=ENVIRONMENT,
-        maxSteps=500,
-        confidence=0.95,
-        batchSize=1,
-        verbose=True,
-    ), terminating after 30 seconds """
+reported_pos_accurate = assume drone2.sds.rps.rrps.prr satisfies PositionReportReceiverAccurate()
 
-# verify follower_smoke_test
+relative_computer_semantics = prove drone2.sds.rps.rrps.rrpc satisfies \
+    ReportedRelativePositionComputerSemantics() using \
+    LeanContractProof("LeanLTL/Examples/Scenic/ReportedRelativePositionComputerSemantics", LEANLTL_LOC, REPL_LOC)
+
+squared_magnitude_semantics = prove drone2.sds.smc satisfies \
+    SquaredMagnitudeComputerSemantics() using \
+    LeanContractProof("LeanLTL/Examples/Scenic/SquaredMagnitudeComputerSemantics", LEANLTL_LOC, REPL_LOC)
+
+availability_system_semantics = prove drone2.sds.rps.avail satisfies \
+    AvailabilitySystemSemantics() using \
+    LeanContractProof("LeanLTL/Examples/Scenic/AvailabilitySystemSemantics", LEANLTL_LOC, REPL_LOC)
+
+follower_controller_semantics = prove drone2.fcs.fc satisfies \
+    FollowerControllerSemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanContractProof("LeanLTL/Examples/Scenic/FollowerControllerSemantics", LEANLTL_LOC, REPL_LOC)
+
+reported_rel_pos_accurate = compose over drone2.sds.rps.rrps:
+    use gps_accurate
+    use reported_pos_accurate
+    use relative_computer_semantics
+
+rel_pos_gps_raw = compose over drone2.sds.rps:
+    use reported_rel_pos_accurate
+    use availability_system_semantics
+
+rel_pos_gps = refine rel_pos_gps_raw as \
+    RelativePositionAccuracyGPS() using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/RelativePositionAccuracyGPSRefinement", LEANLTL_LOC, REPL_LOC)
+
+rel_pos_no_gps = test drone2.sds.rps satisfies RelativePositionAccuracyNoGPS(RANGE_ERROR),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+    terminating after TIME_LIMIT seconds
+
+rel_pos_accuracy_raw = weak merge over drone2.sds.rps:
+    use rel_pos_gps
+    use rel_pos_no_gps
+
+rel_pos_accuracy = refine rel_pos_accuracy_raw as \
+    RelativePositionAccuracy(RANGE_ERROR) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/RelativePositionAccuracyRefinement", LEANLTL_LOC, REPL_LOC)
+
+sq_dist_accuracy = compose over drone2.sds:
+    use rel_pos_accuracy
+    use squared_magnitude_semantics
+
+follower_dir_safety = refine follower_controller_semantics as \
+    FollowerControllerDirectionalSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/FollowerDirectionalSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+velocity_actuation = assume drone2.fcs.dac satisfies VelocityActuation(), with correctness 0.99, with confidence 0.999
+
+control_safety = compose over drone2.fcs: 
+    use follower_dir_safety
+    use velocity_actuation
+
+# Safety: perception accuracy links sensed->true, control_safety gives direction.
+keeps_follow_safety_raw = compose over drone2:
+    use sq_dist_accuracy
+    use control_safety
+
+keeps_follow_distance_safety = refine keeps_follow_safety_raw as \
+    KeepsFollowDistanceSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/KeepsFollowDistanceSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+# Liveness needs MAGNITUDE, so lift the control side from the exact
+# FollowerControllerSemantics (NOT the directional refine control_safety uses).
+control_exact = compose over drone2.fcs:
+    use follower_controller_semantics
+    use velocity_actuation
+
+keeps_follow_liveness_raw = compose over drone2:
+    use sq_dist_accuracy
+    use control_exact
+
+keeps_follow_distance_liveness = refine keeps_follow_liveness_raw as \
+    KeepsFollowDistanceLiveness(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED, max_leader_speed=MAX_LEADER_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/KeepsFollowDistanceLivenessRefinement", LEANLTL_LOC, REPL_LOC)
+
+verify keeps_follow_distance_safety
+verify keeps_follow_distance_liveness
+

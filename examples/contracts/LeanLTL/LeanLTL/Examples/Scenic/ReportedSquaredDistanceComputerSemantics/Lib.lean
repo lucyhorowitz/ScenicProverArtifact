@@ -6,6 +6,8 @@ open scoped LeanLTL.Notation
 namespace ReportedSquaredDistanceComputerSemantics
 
 structure TraceState where
+  -- Props
+  -- Numbers
   N0: ℚ
   N1: ℚ
   N2: ℚ
@@ -40,11 +42,14 @@ def ComponentFunc (t: TraceState) : FuncOutput :=
   {N6 := (reported_dist_sq), N3 := (x), N4 := (y), N5 := (z)}
 
 def CF : TraceFun TraceState FuncOutput := TraceFun.of ComponentFunc
-def CF_N6 : TraceFun TraceState ℚ := TraceFun.map (·.N6) CF
-def CF_N3 : TraceFun TraceState ℚ := TraceFun.map (·.N3) CF
-def CF_N4 : TraceFun TraceState ℚ := TraceFun.map (·.N4) CF
-def CF_N5 : TraceFun TraceState ℚ := TraceFun.map (·.N5) CF
+def CF_N6 : TraceFun TraceState ℚ := TraceFun.map (·.N6) CF 
+def CF_N3 : TraceFun TraceState ℚ := TraceFun.map (·.N3) CF 
+def CF_N4 : TraceFun TraceState ℚ := TraceFun.map (·.N4) CF 
+def CF_N5 : TraceFun TraceState ℚ := TraceFun.map (·.N5) CF 
 
+-- Prop Signals
+
+-- Numerical Signals
 abbrev own_x : TraceFun TraceState ℚ := TraceFun.of (·.N0)
 abbrev own_y : TraceFun TraceState ℚ := TraceFun.of (·.N1)
 abbrev own_z : TraceFun TraceState ℚ := TraceFun.of (·.N2)
@@ -56,8 +61,13 @@ abbrev reported_x : TraceFun TraceState ℚ := TraceFun.of (·.N7)
 abbrev reported_y : TraceFun TraceState ℚ := TraceFun.of (·.N8)
 abbrev reported_z : TraceFun TraceState ℚ := TraceFun.of (·.N9)
 
+-- Defs
+
+-- Assumptions 
+
 abbrev assumptions : TraceSet TraceState := LLTL[⊤]
 
+-- Function Properties 
 abbrev F0 := LLTL[𝐆 ((←reported_dist_sq) = (←CF_N6))]
 abbrev F1 := LLTL[𝐆 ((←rel_x) = (←CF_N3))]
 abbrev F2 := LLTL[𝐆 ((←rel_y) = (←CF_N4))]
@@ -65,9 +75,11 @@ abbrev F3 := LLTL[𝐆 ((←rel_z) = (←CF_N5))]
 
 abbrev fprops : TraceSet TraceState := LLTL[F0 ∧ F1 ∧ F2 ∧ F3]
 
+-- Guarantees 
 abbrev G0 := LLTL[𝐆 (((←rel_x)) = (((←reported_x)) - ((←own_x))))]
 abbrev G1 := LLTL[𝐆 (((←rel_y)) = (((←reported_y)) - ((←own_y))))]
 abbrev G2 := LLTL[𝐆 (((←rel_z)) = (((←reported_z)) - ((←own_z))))]
 abbrev G3 := LLTL[𝐆 (((←reported_dist_sq)) = (((((←rel_x)) * ((←rel_x))) + (((←rel_y)) * ((←rel_y)))) + (((←rel_z)) * ((←rel_z)))))]
 
 abbrev guarantees : TraceSet TraceState := LLTL[G0 ∧ G1 ∧ G2 ∧ G3]
+

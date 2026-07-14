@@ -689,7 +689,7 @@ class And(NarySpecNode):
     def toPACTIStr(self, pactiAtomicsDict):
         pacti_str = f"({self.subs[0].toPACTIStr(pactiAtomicsDict)}) & ({self.subs[1].toPACTIStr(pactiAtomicsDict)})"
         for sub in self.subs[2:]:
-            pacti_str = "(" + pacti_str + f" & {self.sub.toPACTIStr(pactiAtomicsDict)})"
+            pacti_str = "(" + pacti_str + f" & {sub.toPACTIStr(pactiAtomicsDict)})"
 
         return pacti_str
 
@@ -706,7 +706,7 @@ class Or(NarySpecNode):
     def toPACTIStr(self, pactiAtomicsDict):
         pacti_str = f"({self.subs[0].toPACTIStr(pactiAtomicsDict)}) | ({self.subs[1].toPACTIStr(pactiAtomicsDict)})"
         for sub in self.subs[2:]:
-            pacti_str = "(" + pacti_str + f" | {self.sub.toPACTIStr(pactiAtomicsDict)})"
+            pacti_str = "(" + pacti_str + f" | {sub.toPACTIStr(pactiAtomicsDict)})"
 
         return pacti_str
 
