@@ -7,6 +7,7 @@ import subprocess
 
 from scenic.contracts.composition import Composition
 from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.specifications import specValueType
 from scenic.syntax.compiler import NameSwapTransformer
 
 
@@ -183,7 +184,8 @@ class LeanRefinementProof:
             # Defs
             f.write("-- Defs\n")
             for d_name, d_spec in defs.items():
-                f.write(f"abbrev {d_name} := LLTLV[{d_spec.toLean(includeGets=False)}]\n")
+                d_type = "ℚ" if specValueType(d_spec) is float else "Prop"
+                f.write(f"abbrev {d_name} : TraceFun TraceState {d_type} := LLTLV[{d_spec.toLean(includeGets=False)}]\n")
             f.write("\n")
 
             TOP = "\u22a4"
@@ -191,7 +193,7 @@ class LeanRefinementProof:
             # Top Level Assumptions
             f.write("-- Top Level Assumptions \n")
             for i, a in enumerate(tl_assumptions):
-                f.write(f"abbrev A{i} := LLTL[{a.toLean()}]\n")
+                f.write(f"abbrev A{i} : TraceSet TraceState := LLTL[{a.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev assumptions : TraceSet TraceState := LLTL[{' ∧ '.join(f'A{i}' for i in range(len(tl_assumptions))) if tl_assumptions else TOP}]\n"
@@ -201,7 +203,7 @@ class LeanRefinementProof:
             # Internal Assumptions
             f.write("-- Internal Assumptions \n")
             for i, a in enumerate(i_assumptions):
-                f.write(f"abbrev IA{i} := LLTL[{a.toLean()}]\n")
+                f.write(f"abbrev IA{i} : TraceSet TraceState := LLTL[{a.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev i_assumptions : TraceSet TraceState := LLTL[{' ∧ '.join(f'IA{i}' for i in range(len(i_assumptions))) if i_assumptions else TOP}]\n"
@@ -211,7 +213,7 @@ class LeanRefinementProof:
             # Internal Guarantees
             f.write("-- Internal Guarantees \n")
             for i, g in enumerate(i_guarantees):
-                f.write(f"abbrev IG{i} := LLTL[{g.toLean()}]\n")
+                f.write(f"abbrev IG{i} : TraceSet TraceState := LLTL[{g.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev i_guarantees : TraceSet TraceState := LLTL[{' ∧ '.join(f'IG{i}' for i in range(len(i_guarantees))) if i_guarantees else TOP}]\n"
@@ -221,7 +223,7 @@ class LeanRefinementProof:
             # Guarantees
             f.write("-- Top Level Guarantees \n")
             for i, g in enumerate(tl_guarantees):
-                f.write(f"abbrev G{i} := LLTL[{g.toLean()}]\n")
+                f.write(f"abbrev G{i} : TraceSet TraceState := LLTL[{g.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev guarantees : TraceSet TraceState := LLTL[{' ∧ '.join(f'G{i}' for i in range(len(tl_guarantees))) if tl_guarantees else TOP}]\n"

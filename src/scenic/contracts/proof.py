@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 
 from scenic.contracts.contracts import ContractResult, VerificationTechnique
-from scenic.contracts.specifications import Atomic, Implies
+from scenic.contracts.specifications import Atomic, Implies, specValueType
 from scenic.syntax.compiler import NameConstantTransformer
 
 
@@ -196,7 +196,8 @@ class LeanContractProof(VerificationTechnique):
             # Defs
             f.write("-- Defs\n")
             for d_name, d_spec in defs.items():
-                f.write(f"abbrev {d_name} := LLTLV[{d_spec.toLean(includeGets=False)}]\n")
+                d_type = "ℚ" if specValueType(d_spec) is float else "Prop"
+                f.write(f"abbrev {d_name} : TraceFun TraceState {d_type} := LLTLV[{d_spec.toLean(includeGets=False)}]\n")
             f.write("\n")
 
             TOP = "\u22a4"
@@ -204,7 +205,7 @@ class LeanContractProof(VerificationTechnique):
             # Top Level Assumptions
             f.write("-- Assumptions \n")
             for i, a in enumerate(tl_assumptions):
-                f.write(f"abbrev A{i} := LLTL[{a.toLean()}]\n")
+                f.write(f"abbrev A{i} : TraceSet TraceState := LLTL[{a.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev assumptions : TraceSet TraceState := LLTL[{' ∧ '.join(f'A{i}' for i in range(len(tl_assumptions))) if tl_assumptions else TOP}]\n"
@@ -215,13 +216,13 @@ class LeanContractProof(VerificationTechnique):
             f_iter = 0
             f.write("-- Function Properties \n")
             for s_name, s_init_val in self.component.state_inits.items():
-                f.write(f"abbrev F{f_iter} := LLTL[(←{s_name}) = (←{s_init_val})]\n")
+                f.write(f"abbrev F{f_iter} : TraceSet TraceState := LLTL[(←{s_name}) = (←{s_init_val})]\n")
                 f_iter += 1
             for o_name, o_sig in self.output_signals.items():
-                f.write(f"abbrev F{f_iter} := LLTL[𝐆 ((←{o_name}) = (←CF_{o_sig}))]\n")
+                f.write(f"abbrev F{f_iter} : TraceSet TraceState := LLTL[𝐆 ((←{o_name}) = (←CF_{o_sig}))]\n")
                 f_iter += 1
             for o_name, o_sig in self.state_signals.items():
-                f.write(f"abbrev F{f_iter} := LLTL[𝐆 ((𝐗 (←{o_name}) = (←CF_{o_sig})))]\n")
+                f.write(f"abbrev F{f_iter} : TraceSet TraceState := LLTL[𝐆 ((𝐗 (←{o_name}) = (←CF_{o_sig})))]\n")
                 f_iter += 1
             f.write("\n")
             f.write(
@@ -232,7 +233,7 @@ class LeanContractProof(VerificationTechnique):
             # Guarantees
             f.write("-- Guarantees \n")
             for i, g in enumerate(tl_guarantees):
-                f.write(f"abbrev G{i} := LLTL[{g.toLean()}]\n")
+                f.write(f"abbrev G{i} : TraceSet TraceState := LLTL[{g.toLean()}]\n")
             f.write("\n")
             f.write(
                 f"abbrev guarantees : TraceSet TraceState := LLTL[{' ∧ '.join(f'G{i}' for i in range(len(tl_guarantees))) if tl_guarantees else TOP}]\n"

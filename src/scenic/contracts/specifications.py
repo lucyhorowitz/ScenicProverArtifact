@@ -386,6 +386,13 @@ class ConstantSpecNode(SpecNode):
             return super().toPACTIStr(specNodeIdDict)
 
     def toLean(self, ctx=bool, includeGets=True):
+        # In spec (LLTL) context, ascribe numeric literals to ℚ so that
+        # constant-only propositions don't default to Float. Def (LLTLV)
+        # context is detected via includeGets=False; there the literal must
+        # stay bare (LLTLV only lifts bare literals via TraceFun.const) and
+        # the definition's type annotation pins ℚ instead.
+        if includeGets and not isinstance(self.value, bool):
+            return f"({self.value} : ℚ)"
         return str(self.value)
 
     def __eq__(self, other):
@@ -702,7 +709,7 @@ class Or(NarySpecNode):
 
     def toLean(self, ctx=bool, includeGets=True):
         return " ∨ ".join(f"({sub.toLean(includeGets)})" for sub in self.subs)
-        
+
     def toPACTIStr(self, pactiAtomicsDict):
         pacti_str = f"({self.subs[0].toPACTIStr(pactiAtomicsDict)}) | ({self.subs[1].toPACTIStr(pactiAtomicsDict)})"
         for sub in self.subs[2:]:
@@ -712,4 +719,22 @@ class Or(NarySpecNode):
 
     def __str__(self):
         return " or ".join(f"({str(sub)})" for sub in self.subs)
+
+
+def specValueType(spec):
+    """The type a spec node evaluates to: bool (Lean Prop) or float (Lean ℚ).
+
+    Used to annotate generated Lean definitions, since Lean cannot infer the
+    trace-state type of a definition that references no signals.
+    """
+    if isinstance(spec, (Always, Eventually, Not, Until, Implies, Equal, GT, GE, LT, LE, And, Or)):
+        return bool
+    if isinstance(spec, ConstantSpecNode):
+        return bool if isinstance(spec.value, bool) else float
+    if isinstance(spec, Next):
+        return specValueType(spec.sub)
+    if isinstance(spec, DefSpecNode):
+        return specValueType(spec.defSpecs[spec.name])
+    # Atomics and arithmetic operators (Neg, Ceil, Add, Sub, Mul, Div, Min, Max)
+    return float
 
