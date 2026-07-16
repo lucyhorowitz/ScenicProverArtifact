@@ -568,7 +568,7 @@ laser_accurate_distance = assume car.ps.lds satisfies LaserManufacturerDistanceA
     abs_dist_err=ABS_DIST_ERR) 
 
 mean_dist_filter_sem = prove car.ps.mdf satisfies MedianDistanceFilterSemantics() \
-    using LeanContractProof("LeanLTL/Examples/Scenic/MedianDistanceFilterSemantics", LEANLTL_LOC, REPL_LOC)
+    using LeanContractProof("LeanLTL/Examples/Scenic/AEB/MedianDistanceFilterSemantics", LEANLTL_LOC, REPL_LOC)
 
 accurate_distance_known_raw = compose over car.ps:
     use radar_accurate_distance
@@ -577,7 +577,7 @@ accurate_distance_known_raw = compose over car.ps:
 
 accurate_distance_known = refine accurate_distance_known_raw as AccurateDistanceKnownConds(
     PERCEPTION_DISTANCE,
-    abs_dist_err=ABS_DIST_ERR) using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateDistanceKnownRefinement", LEANLTL_LOC, REPL_LOC)
+    abs_dist_err=ABS_DIST_ERR) using LeanRefinementProof("LeanLTL/Examples/Scenic/AEB/AccurateDistanceKnownRefinement", LEANLTL_LOC, REPL_LOC)
 
 accurate_distance_unknown = test car.ps satisfies AccurateDistanceUnknownConds(
     PERCEPTION_DISTANCE,
@@ -591,7 +591,7 @@ accurate_distance_raw = weak merge over car.ps:
 
 accurate_distance = refine accurate_distance_raw as AccurateDistance(
     PERCEPTION_DISTANCE,
-    abs_dist_err=ABS_DIST_ERR) using LeanRefinementProof("LeanLTL/Examples/Scenic/AccurateDistanceRefinement", LEANLTL_LOC, REPL_LOC)
+    abs_dist_err=ABS_DIST_ERR) using LeanRefinementProof("LeanLTL/Examples/Scenic/AEB/AccurateDistanceRefinement", LEANLTL_LOC, REPL_LOC)
 
 if NAIVE_APPROACH:
     accurate_distance = test car.ps satisfies AccurateDistance(
@@ -610,7 +610,7 @@ cs_safety = compose over car.cs:
             abs_dist_err=ABS_DIST_ERR,
             abs_speed_err=ABS_SPEED_ERR,
             max_brake=MAX_BRAKE,
-            max_accel=MAX_ACCEL) using LeanContractProof("LeanLTL/Examples/Scenic/SafeThrottleFilter", LEANLTL_LOC, REPL_LOC)
+            max_accel=MAX_ACCEL) using LeanContractProof("LeanLTL/Examples/Scenic/AEB/SafeThrottleFilter", LEANLTL_LOC, REPL_LOC)
 
 max_braking_force = assume car.cac satisfies MaxBrakingForce(MAX_BRAKE), with correctness 0.99, with confidence 0.999
 
@@ -626,6 +626,6 @@ keeps_distance = refine keeps_distance_raw as KeepsDistance(PERCEPTION_DISTANCE,
     ABS_DIST_ERR,
     ABS_SPEED_ERR,
     max_brake=MAX_BRAKE,
-    max_accel=MAX_ACCEL) using LeanRefinementProof("LeanLTL/Examples/Scenic/KeepsDistanceRefinement", LEANLTL_LOC, REPL_LOC)
+    max_accel=MAX_ACCEL) using LeanRefinementProof("LeanLTL/Examples/Scenic/AEB/KeepsDistanceRefinement", LEANLTL_LOC, REPL_LOC)
 
 verify keeps_distance
