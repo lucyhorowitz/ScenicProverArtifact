@@ -309,6 +309,26 @@ contract PositionReportReceiverAccurate():
     guarantees:
         always (self.leadPos.x == reported_x and self.leadPos.y == reported_y and self.leadPos.z == reported_z)
 
+# PROVE
+contract ReportedRelativePositionComputerSemantics():
+    inputs:
+        own_x: float
+        own_y: float
+        own_z: float
+        reported_x: float
+        reported_y: float
+        reported_z: float
+
+    outputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
+
+    guarantees:
+        always (rel_x == reported_x - own_x)
+        always (rel_y == reported_y - own_y)
+        always (rel_z == reported_z - own_z)
+
 # REFINE from composite of above three
 contract ReportedRelativePositionAccurate():
     outputs:
@@ -601,3 +621,82 @@ implement "follower" with Follower(
     FOLLOW_GAIN,
     MAX_COMPONENT_SPEED,
 ) as drone2
+
+gps_accurate = assume drone2.sds.rps.gps satisfies GPSAccurate()
+
+reported_pos_accurate = assume drone2.sds.rps.prr satisfies PositionReportReceiverAccurate()
+
+relative_computer_semantics = prove drone2.sds.rps.rrpc satisfies \
+    ReportedRelativePositionComputerSemantics() using \
+    LeanContractProof("LeanLTL/Examples/Scenic/DroneDistance/ReportedRelativePositionComputerSemantics", LEANLTL_LOC, REPL_LOC)
+
+reported_rel_pos_accurate_raw = compose over drone2.sds.rps:
+    use gps_accurate
+    use reported_pos_accurate
+    use relative_computer_semantics
+
+reported_rel_pos_accurate = refine reported_rel_pos_accurate_raw as \
+    ReportedRelativePositionAccurate() using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/ReportedRelativePositionAccurateRefinement", LEANLTL_LOC, REPL_LOC)
+
+sq_mag_cptr_sem = prove drone2.sds.smc satisfies \
+    SquaredMagnitudeComputerSemantics() using \
+    LeanContractProof("LeanLTL/Examples/Scenic/DroneDistance/SquaredMagnitudeComputerSemantics", LEANLTL_LOC, REPL_LOC)
+
+sq_dist_accuracy_raw = compose over drone2.sds:
+    use reported_rel_pos_accurate
+    use sq_mag_cptr_sem
+
+sq_dist_accuracy = refine sq_dist_accuracy_raw as \
+    SquaredDistanceSystemAccuracy() using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/SquaredDistanceSystemAccuracyRefinement", LEANLTL_LOC, REPL_LOC)
+
+follower_controller_sem = prove drone2.fcs.fc satisfies \
+    FollowerControllerSemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanContractProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerControllerSemantics", LEANLTL_LOC, REPL_LOC)
+
+follower_controller_dir_safety = refine follower_controller_sem as \
+    FollowerControllerDirectionalSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerDirectionalSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+velocity_actuation = assume drone2.fcs.dac satisfies VelocityActuation(), with correctness 0.99, with confidence 0.999
+
+follower_vel_dir_safety_raw = compose over drone2.fcs:
+    use follower_controller_dir_safety
+    use velocity_actuation
+
+follower_vel_dir_safety = refine follower_vel_dir_safety_raw as \
+    FollowerVelocityDirectionalSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerVelocityDirectionalSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+follower_vel_sem_raw = compose over drone2.fcs:
+    use follower_controller_sem
+    use velocity_actuation
+
+follower_vel_sem = refine follower_vel_sem_raw as \
+    FollowerVelocitySemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerVelocitySemanticsRefinement", LEANLTL_LOC, REPL_LOC)
+   
+keeps_follow_dist_progress_raw = compose over drone2:
+    use follower_vel_sem
+    use sq_dist_accuracy
+
+keeps_follow_dist_progress = refine keeps_follow_dist_progress_raw as \
+    KeepsFollowDistanceProgress(MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED, max_leader_speed=MAX_LEADER_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/KeepsFollowDistanceProgressRefinement", LEANLTL_LOC, REPL_LOC)
+   
+keeps_follow_dist_liveness = test drone2 satisfies KeepsFollowDistanceLiveness(MAX_FOLLOW_DIST),
+    using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
+    terminating after TIME_LIMIT seconds
+
+keeps_follow_dist_safety_raw = compose over drone2:
+    use follower_vel_dir_safety
+    use sq_dist_accuracy
+
+keeps_follow_dist_safety = refine keeps_follow_dist_safety_raw as \
+    KeepsFollowDistanceSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/KeepsFollowDistanceSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+verify keeps_follow_dist_progress
+verify keeps_follow_dist_liveness
+verify keeps_follow_dist_safety
