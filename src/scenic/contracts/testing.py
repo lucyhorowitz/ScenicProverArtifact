@@ -549,9 +549,10 @@ class TestingContractResult(ContractResult):
 
     @property
     def evidenceSummary(self):
-        string = (
-            f"Simulation-Based Testing\n"
-            f"Sampled from {self._source_info}\n" if self.source else ""
+        string = ""
+        if self.source:
+            string += f"Simulation-Based Testing\nSampled from {self._source_info}\n"
+        string += (
             f"{self.v_count} Verified,  {self.r_count} Rejected,  "
             f"{self.a_count} A-Violated,  {self.g_count} G-Violated\n"
             f"{len(self.testData)} Samples, {self.elapsed_time:.2f} Seconds\n"
