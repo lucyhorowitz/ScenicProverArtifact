@@ -26,6 +26,7 @@ from scenic.syntax.veneer import verbosePrint
 from .utils import (
     airsimToScenicLocation,
     airsimToScenicOrientation,
+    airsimToScenicVector,
     scenicToAirsimLocation,
     scenicToAirsimOrientation,
     scenicToAirsimScale,
@@ -271,9 +272,9 @@ class AirSimSimulation(Simulation):
         if obj.blueprint == "Drone" or obj.blueprint == "PX4Drone":
             pose = self.client.simGetVehiclePose(objName)
             kinematics = self.client.simGetGroundTruthKinematics(objName)
-            velocity = airsimToScenicLocation(kinematics.linear_velocity)
+            velocity = airsimToScenicVector(kinematics.linear_velocity)
 
-            angularVelocity = airsimToScenicLocation(kinematics.angular_velocity)
+            angularVelocity = airsimToScenicVector(kinematics.angular_velocity)
 
         elif obj.blueprint == "StaticObj" or obj.blueprint == "AirSimPreExisting":
             pose = self.client.simGetObjectPose(objName)
