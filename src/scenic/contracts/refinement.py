@@ -6,7 +6,12 @@ from pathlib import Path
 import subprocess
 
 from scenic.contracts.composition import Composition
-from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.contracts import (
+    ContractResult,
+    VerificationTechnique,
+    contractName,
+    verificationProgress,
+)
 from scenic.contracts.specifications import specValueType
 from scenic.syntax.compiler import NameSwapTransformer
 
@@ -27,15 +32,17 @@ class Refinement(VerificationTechnique):
         return self.contract.guarantees
 
     def verify(self, generateBatchApprox):
-        self.method.check(self.stmt, self.contract)
+        message = f"Refine to {contractName(self.contract)} on {self.component}"
+        with verificationProgress(message):
+            self.method.check(self.stmt, self.contract)
 
-        return RefinementContractResult(
-            self.assumptions,
-            self.guarantees,
-            self.stmt.component,
-            self.stmt.verify(generateBatchApprox),
-            self.method,
-        )
+            return RefinementContractResult(
+                self.assumptions,
+                self.guarantees,
+                self.stmt.component,
+                self.stmt.verify(generateBatchApprox),
+                self.method,
+            )
 
 
 class RefinementContractResult(ContractResult):
@@ -68,6 +75,11 @@ class LeanRefinementProof:
         self.repl_loc = Path(repl_loc)
 
     def check(self, stmt, contract):
+        message = f"Lean refinement proof [{self.proof_path}]"
+        with verificationProgress(message):
+            return self._check(stmt, contract)
+
+    def _check(self, stmt, contract):
         ## Extract and standardize internal assumptions and guarantees
         if isinstance(stmt, Composition):
             i_assumptions = []
@@ -274,6 +286,10 @@ class LeanRefinementProof:
         )
 
     def checkProof(self, file):
+        with verificationProgress(f"Check {Path(file).name}"):
+            return self._checkProof(file)
+
+    def _checkProof(self, file):
         subprocess.run(
             ["lake", "build"],
             capture_output=True,

@@ -38,7 +38,9 @@ def compileContractsFile(filename):
 
     exec(compiled_code, namespace)
 
-    for v_stmt in scenic.contracts.veneer._verifyStatements:
+    statements = scenic.contracts.veneer._verifyStatements
+    for index, v_stmt in enumerate(statements, start=1):
+        print(f"Verification target {index}/{len(statements)}:", flush=True)
         start_time = time.time()
         result = v_stmt.verify(_generateBatchApprox)
         print(str(result))

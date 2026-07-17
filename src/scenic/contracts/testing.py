@@ -7,7 +7,12 @@ import time
 import rv_ltl
 import scipy
 
-from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.contracts import (
+    ContractResult,
+    VerificationTechnique,
+    contractName,
+    verificationProgress,
+)
 from scenic.contracts.utils import linkSetBehavior, lookuplinkedObject
 from scenic.core.distributions import RejectionException
 from scenic.core.dynamics import GuardViolation, RejectSimulationException
@@ -48,6 +53,11 @@ class Testing(VerificationTechnique):
         return self.contract.guarantees
 
     def verify(self, generateBatchApprox):
+        message = f"Simulation test {contractName(self.contract)} on {self.component}"
+        with verificationProgress(message):
+            return self._verify(generateBatchApprox)
+
+    def _verify(self, generateBatchApprox):
         result = self._newContractResult()
 
         activeTermConditions = (

@@ -9,7 +9,11 @@ import pacti
 from pacti.contracts import PropositionalIoContract
 
 from scenic.contracts.components import ActionComponent, BaseComponent, ComposeComponent
-from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.contracts import (
+    ContractResult,
+    VerificationTechnique,
+    verificationProgress,
+)
 import scenic.contracts.specifications as specs
 from scenic.contracts.testing import Testing, SimulationTestingContractResult, SimulationTestData, TestResult
 from scenic.core.distributions import Options, Range
@@ -300,10 +304,12 @@ class Composition(VerificationTechnique):
         return self._guarantees
 
     def verify(self, generateBatchApprox):
-        sub_results = [stmt.verify(generateBatchApprox) for stmt in self.sub_stmts]
-        return CompositionContractResult(
-            self.assumptions, self.guarantees, self.component, sub_results
-        )
+        message = f"Compose {len(self.sub_stmts)} result(s) for {self.component}"
+        with verificationProgress(message):
+            sub_results = [stmt.verify(generateBatchApprox) for stmt in self.sub_stmts]
+            return CompositionContractResult(
+                self.assumptions, self.guarantees, self.component, sub_results
+            )
 
     def tempVarName(self):
         var_name = f"SCENIC_INTERNAL_VAR_{self.var_num}"
@@ -393,6 +399,11 @@ class WeakMerge(VerificationTechnique):
         return self._guarantees
 
     def verify(self, generateBatchApprox):
+        message = f"Weak-merge {len(self.sub_stmts)} result(s) for {self.component}"
+        with verificationProgress(message):
+            return self._verify(generateBatchApprox)
+
+    def _verify(self, generateBatchApprox):
         if self.weak_merge_speedup:
             safe_results = 0
             unsafe_results = 0

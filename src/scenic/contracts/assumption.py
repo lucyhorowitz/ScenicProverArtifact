@@ -1,6 +1,11 @@
 from functools import cached_property
 
-from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.contracts import (
+    ContractResult,
+    VerificationTechnique,
+    contractName,
+    verificationProgress,
+)
 
 
 class Assumption(VerificationTechnique):
@@ -26,13 +31,15 @@ class Assumption(VerificationTechnique):
         return self.contract.guarantees
 
     def verify(self, generateBatchApprox):
-        return AssumptionContractResult(
-            self.contract.assumptions,
-            self.contract.guarantees,
-            self.component,
-            self.correctness,
-            self.confidence,
-        )
+        message = f"Assume {contractName(self.contract)} on {self.component}"
+        with verificationProgress(message):
+            return AssumptionContractResult(
+                self.contract.assumptions,
+                self.contract.guarantees,
+                self.component,
+                self.correctness,
+                self.confidence,
+            )
 
 
 class AssumptionContractResult(ContractResult):

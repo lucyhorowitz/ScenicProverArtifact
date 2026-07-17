@@ -1,9 +1,42 @@
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from copy import deepcopy
 from functools import cached_property
+import time
 
 from scenic.contracts.specifications import ASTSpecTransformer, SpecNode
 from scenic.syntax.compiler import NameConstantTransformer
+
+
+_verificationProgressDepth = 0
+
+
+def contractName(contract):
+    """Return the source-level name of a compiler-generated contract class."""
+    prefix = "_SCENIC_INTERNAL_CONTRACT_"
+    return type(contract).__name__.removeprefix(prefix)
+
+
+@contextmanager
+def verificationProgress(message):
+    """Print a live, nested status line for one verification-tree node."""
+    global _verificationProgressDepth
+
+    indent = "  " * _verificationProgressDepth
+    print(f"{indent}→ {message}", flush=True)
+    _verificationProgressDepth += 1
+    start = time.monotonic()
+    try:
+        yield
+    except BaseException:
+        elapsed = time.monotonic() - start
+        _verificationProgressDepth -= 1
+        print(f"{indent}✗ {message} ({elapsed:.1f}s)", flush=True)
+        raise
+    else:
+        elapsed = time.monotonic() - start
+        _verificationProgressDepth -= 1
+        print(f"{indent}✓ {message} ({elapsed:.1f}s)", flush=True)
 
 
 class Contract:

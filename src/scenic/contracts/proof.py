@@ -7,7 +7,12 @@ import os
 from pathlib import Path
 import subprocess
 
-from scenic.contracts.contracts import ContractResult, VerificationTechnique
+from scenic.contracts.contracts import (
+    ContractResult,
+    VerificationTechnique,
+    contractName,
+    verificationProgress,
+)
 from scenic.contracts.specifications import Atomic, Implies, specValueType
 from scenic.syntax.compiler import NameConstantTransformer
 
@@ -39,6 +44,14 @@ class LeanContractProof(VerificationTechnique):
         return self.contract.guarantees
 
     def verify(self, _generateBatchApprox):
+        message = (
+            f"Lean component proof {contractName(self.contract)} on "
+            f"{self.component} [{self.proof_path}]"
+        )
+        with verificationProgress(message):
+            return self._verify()
+
+    def _verify(self):
         import scenic.contracts.veneer as contracts_veneer
 
         self.comp_body = contracts_veneer._syntaxTrees[self.component.def_id_offset]
@@ -270,6 +283,10 @@ class LeanContractProof(VerificationTechnique):
         )
 
     def checkProof(self, file):
+        with verificationProgress(f"Check {Path(file).name}"):
+            return self._checkProof(file)
+
+    def _checkProof(self, file):
         subprocess.run(
             ["lake", "build"],
             capture_output=True,
