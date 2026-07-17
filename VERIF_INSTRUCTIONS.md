@@ -97,6 +97,13 @@ Lean module paths mirror the layout. Moving a proof directory requires updating
 both the `import` lines in its `.lean` files and the path string in the
 `.contract`.
 
+## Numeric semantics
+
+Lean obligations are interpreted over ℚ (exact arithmetic). Trace values embed
+exactly (every IEEE double is rational); floating-point rounding in component
+bodies and the runtime monitor is assumed negligible relative to contract
+margins.
+
 ## Gotchas
 
 | Symptom | Cause | Fix |
