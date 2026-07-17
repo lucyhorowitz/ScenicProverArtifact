@@ -332,11 +332,40 @@ class LeanContractProof(VerificationTechnique):
             func += f"  let {s_name} := t.{s_signal};\n"
         func += "\n"
 
-        for stmt in self.comp_body:
-            func += "  " + self.astToLean(stmt).replace("\n", "\n  ") + "\n"
+        body = self.statementsToLean(self.comp_body)
+        func += "  " + body.replace("\n", "\n  ") + "\n"
 
         func += "\n"
         return func
+
+    def statementsToLean(self, statements):
+        """Translate an imperative statement list using the tail as continuation.
+
+        Lean ``let`` bindings are lexically scoped, unlike Python assignments.  If
+        a Python component assigns outputs in an ``if`` and returns afterwards,
+        the return therefore has to be copied into every branch in the generated
+        expression.  Recursing with the remaining statements as a continuation
+        also handles nested ``if``/``elif`` blocks.
+        """
+        if not statements:
+            return ""
+
+        stmt, *tail = statements
+        if isinstance(stmt, ast.Return):
+            return self.astToLean(stmt)
+
+        if isinstance(stmt, ast.If):
+            then_branch = self.statementsToLean([*stmt.body, *tail])
+            else_branch = self.statementsToLean([*stmt.orelse, *tail])
+            ite = f"if ({self.astToLean(stmt.test)})\nthen\n"
+            ite += "  " + then_branch.replace("\n", "\n  ") + "\n"
+            ite += "else\n"
+            ite += "  " + else_branch.replace("\n", "\n  ")
+            return ite
+
+        head = self.astToLean(stmt)
+        rest = self.statementsToLean(tail)
+        return head if not rest else f"{head}\n{rest}"
 
     def astToLean(self, node):
         assert isinstance(node, ast.AST)
