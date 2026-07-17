@@ -418,7 +418,7 @@ contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_compo
     definitions:
         max_dist_sq = max_dist * max_dist
         min_dist_sq = min_dist * min_dist
-        dot_prod = rel_x * cmd_vx + rel_y * cmd_vy + rel_z * cmd_vz
+        cmd_dot_prod = rel_x * cmd_vx + rel_y * cmd_vy + rel_z * cmd_vz
 
     assumptions:
         max_component_speed > 0
@@ -427,8 +427,8 @@ contract FollowerControllerDirectionalSafety(min_dist, max_dist, gain, max_compo
 
     guarantees:
         # points in the right direction
-        always ((dist_sq > max_dist_sq) implies (dot_prod >= 0))
-        always ((dist_sq < min_dist_sq) implies (dot_prod <= 0))
+        always ((dist_sq > max_dist_sq) implies (cmd_dot_prod >= 0))
+        always ((dist_sq < min_dist_sq) implies (cmd_dot_prod <= 0))
         always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
 
         # componentwise speed bounded
