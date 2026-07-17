@@ -48,6 +48,9 @@ source ~/miniforge3/bin/activate airsim
 scenic verify examples/contracts/drone_distance.contract
 ```
 
+AirSim velocity commands are quiet by default. To trace every command, run
+`scenic verify -v 3 examples/contracts/drone_distance.contract`.
+
 Budget more than `TIME_LIMIT` (default `5*60`): simulation testing runs for the
 budget, plus compilation and proof checking.
 

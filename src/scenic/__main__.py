@@ -206,7 +206,7 @@ def scenic_generate(args):
 def scenic_verify(args):
     print("Beginning verification...")
     scenic.setDebuggingOptions(
-        verbosity=0,
+        verbosity=args.verbosity,
         fullBacktrace=False,
         debugExceptions=args.pdb,
         debugRejections=False,
@@ -361,6 +361,14 @@ debugOpts.add_argument(
 verify_parser = subparsers.add_parser("verify")
 verify_parser.set_defaults(func=scenic_verify)
 verify_parser.add_argument("scenicFile", help="a Scenic file to run", metavar="FILE")
+verify_parser.add_argument(
+    "-v",
+    "--verbosity",
+    help="verbosity level (default 0; level 3 traces simulator commands)",
+    type=int,
+    choices=(0, 1, 2, 3),
+    default=0,
+)
 
 debugOpts = verify_parser.add_argument_group("debugging options")
 debugOpts.add_argument(
