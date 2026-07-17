@@ -113,7 +113,11 @@ class LeanContractProof(VerificationTechnique):
                 else:
                     if defs[d_name] != d_spec:
                         # TODO: Handle renames
-                        assert False
+                        assert False, (
+                            f"Def name collision in component proof [{self.proof_path}]: "
+                            f"'{d_name}' is defined differently by two contracts "
+                            f"({defs[d_name]} vs {d_spec}). Rename one of them."
+                        )
 
         ## Setup proof directory
         Path(self.proof_dir).mkdir(
@@ -287,8 +291,12 @@ class LeanContractProof(VerificationTechnique):
             return self._checkProof(file)
 
     def _checkProof(self, file):
+        # Build the file's own module (not the default target, which doesn't
+        # include generated example modules) so its imports have oleans when
+        # the REPL elaborates it.
+        module = ".".join(Path(file).relative_to(self.proof_loc).with_suffix("").parts)
         subprocess.run(
-            ["lake", "build"],
+            ["lake", "build", module],
             capture_output=True,
             text=True,
             cwd=str(self.proof_loc)
@@ -307,7 +315,9 @@ class LeanContractProof(VerificationTechnique):
         assert result_dict["env"] == 0
 
         for msg in result_dict.get("messages", []):
-            assert msg["severity"] != "error", f"Error in Lean proof: {file}"
+            assert (
+                msg["severity"] != "error"
+            ), f"Error in Lean proof: {file}\n{msg.get('data', '')}"
 
         assert "sorries" not in result_dict, "Sorry used in Lean proof"
 
