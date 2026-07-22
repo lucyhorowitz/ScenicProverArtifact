@@ -42,15 +42,16 @@ abbrev assumptions : TraceSet TraceState := LLTL[A0 ∧ A1 ∧ A2]
 
 -- Internal Assumptions 
 abbrev IA0 : TraceSet TraceState := LLTL[((0.2 : ℚ)) > ((0 : ℚ))]
-abbrev IA1 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
-abbrev IA2 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
-abbrev IA3 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
+abbrev IA1 : TraceSet TraceState := LLTL[((0.5 : ℚ)) > ((0 : ℚ))]
+abbrev IA2 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
+abbrev IA3 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
+abbrev IA4 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
 
-abbrev i_assumptions : TraceSet TraceState := LLTL[IA0 ∧ IA1 ∧ IA2 ∧ IA3]
+abbrev i_assumptions : TraceSet TraceState := LLTL[IA0 ∧ IA1 ∧ IA2 ∧ IA3 ∧ IA4]
 
 -- Internal Guarantees 
 abbrev IG0 : TraceSet TraceState := LLTL[𝐆 (((((←min_dist_sq)) ≤ ((←dist_sq))) ∧ (((←dist_sq)) ≤ ((←max_dist_sq)))) → ((((←cmd_vx)) = ((0 : ℚ))) ∧ (((←cmd_vy)) = ((0 : ℚ))) ∧ (((←cmd_vz)) = ((0 : ℚ)))))]
-abbrev IG1 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) < ((←min_dist_sq))) → ((((←cmd_vx)) = ((((-((0.2 : ℚ))) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = ((((-((0.2 : ℚ))) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = ((((-((0.2 : ℚ))) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
+abbrev IG1 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) < ((←min_dist_sq))) → ((((←cmd_vx)) = ((((-((0.5 : ℚ))) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = ((((-((0.5 : ℚ))) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = ((((-((0.5 : ℚ))) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 abbrev IG2 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) > ((←max_dist_sq))) → ((((←cmd_vx)) = (((((0.2 : ℚ)) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = (((((0.2 : ℚ)) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = (((((0.2 : ℚ)) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 
 abbrev i_guarantees : TraceSet TraceState := LLTL[IG0 ∧ IG1 ∧ IG2]

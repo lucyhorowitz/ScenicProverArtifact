@@ -1,9 +1,9 @@
-import LeanLTL.Examples.Scenic.DroneDistance.KeepsFollowDistanceSafetyRefinement.Lib
+import LeanLTL.Examples.Scenic.DroneDistance.FollowerMovementDirectionalSafetyRefinement.Lib
 
 open LeanLTL
 open scoped LeanLTL.Notation
 
-namespace KeepsFollowDistanceSafetyRefinement
+namespace FollowerMovementDirectionalSafetyRefinement
 
 /- Every internal assumption is a closed rational fact (IA1/IA2 are copies of
    A0/A1; IA0 is a constant inequality), so no trace reasoning is needed. -/

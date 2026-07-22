@@ -16,13 +16,13 @@ private lemma key1 : ∀ x : ℚ, 0 ≤ x * ((0.2 * x ⊔ -3.0) ⊓ 3.0) := by
       Rat.mul_nonneg ?_ ?_; nlinarith; linarith
     · rw [inf_eq_right.mpr h']; nlinarith
 
-private lemma key2 : ∀ x : ℚ, x * ((-(0.2 * x) ⊔ -3.0) ⊓ 3.0) ≤ 0 := by
+private lemma key2 : ∀ x : ℚ, x * ((-(0.5 * x) ⊔ -3.0) ⊓ 3.0) ≤ 0 := by
   intro x
-  rcases le_total (-(0.2 * x)) (-3.0 : ℚ) with h | h
+  rcases le_total (-(0.5 * x)) (-3.0 : ℚ) with h | h
   · rw [sup_eq_right.mpr h, inf_eq_left.mpr (by norm_num)]
     nlinarith
   · rw [sup_eq_left.mpr h]
-    rcases le_total (-(0.2 * x)) (3.0 : ℚ) with h' | h'
+    rcases le_total (-(0.5 * x)) (3.0 : ℚ) with h' | h'
     · rw [inf_eq_left.mpr h', mul_neg, ← mul_assoc, ← mul_comm, ← mul_assoc, Right.neg_nonpos_iff]
       nlinarith
     · rw [inf_eq_right.mpr h']; nlinarith

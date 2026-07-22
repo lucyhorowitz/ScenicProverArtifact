@@ -38,9 +38,9 @@ def ComponentFunc (t: TraceState) : FuncOutput :=
   else
     if ((dist_sq) < ((5.0) * (5.0)))
     then
-      let cmd_vx := (((-(0.2)) * (rel_x)) ⊔ (-(3.0))) ⊓ (3.0);
-      let cmd_vy := (((-(0.2)) * (rel_y)) ⊔ (-(3.0))) ⊓ (3.0);
-      let cmd_vz := (((-(0.2)) * (rel_z)) ⊔ (-(3.0))) ⊓ (3.0);
+      let cmd_vx := (((-(0.5)) * (rel_x)) ⊔ (-(3.0))) ⊓ (3.0);
+      let cmd_vy := (((-(0.5)) * (rel_y)) ⊔ (-(3.0))) ⊓ (3.0);
+      let cmd_vz := (((-(0.5)) * (rel_z)) ⊔ (-(3.0))) ⊓ (3.0);
       {N0 := (cmd_vx), N1 := (cmd_vy), N2 := (cmd_vz)}
     else
       let cmd_vx := 0.0;
@@ -70,11 +70,12 @@ abbrev min_dist_sq : TraceFun TraceState ℚ := LLTLV[(5.0) * (5.0)]
 
 -- Assumptions 
 abbrev A0 : TraceSet TraceState := LLTL[((0.2 : ℚ)) > ((0 : ℚ))]
-abbrev A1 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
-abbrev A2 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
-abbrev A3 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
+abbrev A1 : TraceSet TraceState := LLTL[((0.5 : ℚ)) > ((0 : ℚ))]
+abbrev A2 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
+abbrev A3 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
+abbrev A4 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
 
-abbrev assumptions : TraceSet TraceState := LLTL[A0 ∧ A1 ∧ A2 ∧ A3]
+abbrev assumptions : TraceSet TraceState := LLTL[A0 ∧ A1 ∧ A2 ∧ A3 ∧ A4]
 
 -- Function Properties 
 abbrev F0 : TraceSet TraceState := LLTL[𝐆 ((←cmd_vx) = (←CF_N0))]
@@ -85,7 +86,7 @@ abbrev fprops : TraceSet TraceState := LLTL[F0 ∧ F1 ∧ F2]
 
 -- Guarantees 
 abbrev G0 : TraceSet TraceState := LLTL[𝐆 (((((←min_dist_sq)) ≤ ((←dist_sq))) ∧ (((←dist_sq)) ≤ ((←max_dist_sq)))) → ((((←cmd_vx)) = ((0 : ℚ))) ∧ (((←cmd_vy)) = ((0 : ℚ))) ∧ (((←cmd_vz)) = ((0 : ℚ)))))]
-abbrev G1 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) < ((←min_dist_sq))) → ((((←cmd_vx)) = ((((-((0.2 : ℚ))) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = ((((-((0.2 : ℚ))) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = ((((-((0.2 : ℚ))) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
+abbrev G1 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) < ((←min_dist_sq))) → ((((←cmd_vx)) = ((((-((0.5 : ℚ))) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = ((((-((0.5 : ℚ))) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = ((((-((0.5 : ℚ))) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 abbrev G2 : TraceSet TraceState := LLTL[𝐆 ((((←dist_sq)) > ((←max_dist_sq))) → ((((←cmd_vx)) = (((((0.2 : ℚ)) * ((←rel_x))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vy)) = (((((0.2 : ℚ)) * ((←rel_y))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←cmd_vz)) = (((((0.2 : ℚ)) * ((←rel_z))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 
 abbrev guarantees : TraceSet TraceState := LLTL[G0 ∧ G1 ∧ G2]

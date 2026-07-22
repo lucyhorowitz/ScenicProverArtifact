@@ -10,6 +10,11 @@ TIME_LIMIT = 5*60
 MIN_FOLLOW_DIST = 5.0
 MAX_FOLLOW_DIST = 15.0
 FOLLOW_GAIN = 0.2
+# Retreat uses a larger gain so the radial retreat speed beats the leader all the
+# way down to the collision floor R = MIN_FOLLOW_DIST - MAX_LEADER_SPEED*timestep.
+# Constraints: RETREAT_GAIN*R >= MAX_LEADER_SPEED and RETREAT_GAIN*MIN_FOLLOW_DIST <= MAX_COMPONENT_SPEED.
+# With R=4.8: 0.5*4.8=2.4 >= 2.0 and 0.5*5=2.5 <= 3.0.
+RETREAT_GAIN = 0.5
 MAX_COMPONENT_SPEED = 3.0
 # Leader (drone1) runs Patrol(..., speed=2) in followPatrol.scenic; timestep is 0.1.
 MAX_LEADER_SPEED = 2.0
@@ -20,7 +25,6 @@ MAX_LEADER_SPEED = 2.0
 ###############################################################################
 
 import math
-import random
 from typing import Union
 import numpy
 
@@ -39,12 +43,47 @@ LEANLTL_LOC = localPath("LeanLTL")
 REPL_LOC = localPath("repl")
 
 SEED=42
-random.seed(SEED)
 numpy.random.seed(SEED)
 
 ## Components ##
 
 # Sensor components
+
+component GPS():
+    """Reports the exact position of the drone."""
+    sensors:
+        self.position: Vector as true_pos
+
+    outputs:
+        gps_x: float
+        gps_y: float
+        gps_z: float
+
+    body:
+        gps_x = true_pos.x
+        gps_y = true_pos.y
+        gps_z = true_pos.z
+        return {
+            "gps_x": gps_x,
+            "gps_y": gps_y,
+            "gps_z": gps_z,
+        }
+
+component PositionReportReceiver():
+    """Receives the exact position reported by the lead drone."""
+    sensors:
+        self.leadPos: Vector as true_lead_pos
+
+    outputs:
+        reported_x: float
+        reported_y: float
+        reported_z: float
+
+    body:
+        reported_x = true_lead_pos.x
+        reported_y = true_lead_pos.y
+        reported_z = true_lead_pos.z
+        return {"reported_x": reported_x, "reported_y": reported_y, "reported_z": reported_z}
 
 ## Distance components
 component ReportedRelativePositionComputer():
@@ -67,20 +106,6 @@ component ReportedRelativePositionComputer():
         y = reported_y - own_y
         z = reported_z - own_z
         return {"rel_x": x, "rel_y": y, "rel_z": z}
-
-component SquaredMagnitudeComputer():
-    """Computes squared distance from a relative-position vector."""
-    inputs:
-        rel_x: float
-        rel_y: float
-        rel_z: float
-
-    outputs:
-        dist_sq: float
-
-    body:
-        dist_sq = rel_x * rel_x + rel_y * rel_y + rel_z * rel_z
-        return {"dist_sq": dist_sq}
 
 component ReportedRelativePositionSystem():
     """Produces relative position from exact GPS and position reports."""
@@ -105,42 +130,19 @@ component ReportedRelativePositionSystem():
         connect prr.reported_y to rrpc.reported_y
         connect prr.reported_z to rrpc.reported_z
 
-component PositionReportReceiver():
-    """Receives the exact position reported by the lead drone."""
-    sensors:
-        self.leadPos: Vector as true_lead_pos
+component SquaredMagnitudeComputer():
+    """Computes squared distance from a relative-position vector."""
+    inputs:
+        rel_x: float
+        rel_y: float
+        rel_z: float
 
     outputs:
-        reported_x: float
-        reported_y: float
-        reported_z: float
+        dist_sq: float
 
     body:
-        reported_x = true_lead_pos.x
-        reported_y = true_lead_pos.y
-        reported_z = true_lead_pos.z
-        return {"reported_x": reported_x, "reported_y": reported_y, "reported_z": reported_z}
-
-
-component GPS():
-    """Reports the exact position of the drone."""
-    sensors:
-        self.position: Vector as true_pos
-
-    outputs:
-        gps_x: float
-        gps_y: float
-        gps_z: float
-
-    body:
-        gps_x = true_pos.x
-        gps_y = true_pos.y
-        gps_z = true_pos.z
-        return {
-            "gps_x": gps_x,
-            "gps_y": gps_y,
-            "gps_z": gps_z,
-        }
+        dist_sq = rel_x * rel_x + rel_y * rel_y + rel_z * rel_z
+        return {"dist_sq": dist_sq}
 
 component SquaredDistanceSystem():
     outputs:
@@ -164,29 +166,13 @@ component SquaredDistanceSystem():
 
 ## Velocity components
 
-component VelocityEstimator(vel_error):
-    """Estimates my own velocity with some noise"""
-    sensors:
-        self.velocity: Vector as true_vel
-
-    outputs:
-        est_vx: float
-        est_vy: float
-        est_vz: float
-
-    body:
-        noise_x = random.uniform(-vel_error, vel_error)
-        noise_y = random.uniform(-vel_error, vel_error)
-        noise_z = random.uniform(-vel_error, vel_error)
-        est_vx = true_vel.x + noise_x
-        est_vy = true_vel.y + noise_y
-        est_vz = true_vel.z + noise_z
-        return {"est_vx": est_vx, "est_vy": est_vy, "est_vz": est_vz}
-
-component FollowerController(min_dist, max_dist, gain, max_component_speed):
+component FollowerController(min_dist, max_dist, gain, retreat_gain, max_component_speed):
     """Commands zero velocity inside the inclusive following band from
-    `min_dist` to `max_dist`, moves toward the leader above the band, and moves
-    away from the leader below the band."""
+    `min_dist` to `max_dist`, moves toward the leader (with `gain`) above the
+    band, and moves away from the leader (with the stronger `retreat_gain`)
+    below the band. The retreat uses a separate, larger gain so that the radial
+    retreat speed out-runs the leader all the way down to the collision floor,
+    which is what makes the never-crash invariant hold."""
     inputs:
         dist_sq: float
         rel_x: float
@@ -204,9 +190,9 @@ component FollowerController(min_dist, max_dist, gain, max_component_speed):
             cmd_vy = min(max(gain * rel_y, -max_component_speed), max_component_speed)
             cmd_vz = min(max(gain * rel_z, -max_component_speed), max_component_speed)
         elif dist_sq < (min_dist * min_dist):
-            cmd_vx = min(max(-gain * rel_x, -max_component_speed), max_component_speed)
-            cmd_vy = min(max(-gain * rel_y, -max_component_speed), max_component_speed)
-            cmd_vz = min(max(-gain * rel_z, -max_component_speed), max_component_speed)
+            cmd_vx = min(max(-retreat_gain * rel_x, -max_component_speed), max_component_speed)
+            cmd_vy = min(max(-retreat_gain * rel_y, -max_component_speed), max_component_speed)
+            cmd_vz = min(max(-retreat_gain * rel_z, -max_component_speed), max_component_speed)
         else:
             cmd_vx = 0.0
             cmd_vy = 0.0
@@ -254,7 +240,7 @@ component DroneActionControls():
 
         connect ag.velocity_action to dc.velocity_action
 
-component FollowerControlSystem(min_dist, max_dist, gain, max_component_speed):
+component FollowerControlSystem(min_dist, max_dist, gain, retreat_gain, max_component_speed):
     """Turns the relative position into a velocity command and the
     corresponding drone action."""
     inputs:
@@ -264,7 +250,7 @@ component FollowerControlSystem(min_dist, max_dist, gain, max_component_speed):
         rel_z: float
 
     compose:
-        fc = FollowerController(min_dist, max_dist, gain, max_component_speed)
+        fc = FollowerController(min_dist, max_dist, gain, retreat_gain, max_component_speed)
         dac = DroneActionControls()
 
         connect dist_sq to fc.dist_sq
@@ -276,11 +262,11 @@ component FollowerControlSystem(min_dist, max_dist, gain, max_component_speed):
         connect fc.cmd_vy to dac.cmd_vy
         connect fc.cmd_vz to dac.cmd_vz
 
-component Follower(min_dist: float, max_dist: float, gain: float, max_component_speed: float):
+component Follower(min_dist: float, max_dist: float, gain: float, retreat_gain: float, max_component_speed: float):
     """This is the whole drone!"""
     compose:
         sds = SquaredDistanceSystem()
-        fcs = FollowerControlSystem(min_dist, max_dist, gain, max_component_speed)
+        fcs = FollowerControlSystem(min_dist, max_dist, gain, retreat_gain, max_component_speed)
 
         connect sds.dist_sq to fcs.dist_sq
         connect sds.rel_x to fcs.rel_x
@@ -369,7 +355,7 @@ contract SquaredDistanceSystemAccuracy():
         always (dist_sq == rel_x * rel_x + rel_y * rel_y + rel_z * rel_z)
         
 # PROVE 
-contract FollowerControllerSemantics(min_dist, max_dist, gain, max_component_speed):
+contract FollowerControllerSemantics(min_dist, max_dist, gain, retreat_gain, max_component_speed):
     inputs:
         dist_sq: float
         rel_x: float
@@ -387,15 +373,16 @@ contract FollowerControllerSemantics(min_dist, max_dist, gain, max_component_spe
 
     assumptions:
         gain > 0
+        retreat_gain > 0
         max_component_speed > 0
         0 <= min_dist
         min_dist <= max_dist
 
     guarantees:
         always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies (cmd_vx == 0 and cmd_vy == 0 and cmd_vz == 0))
-        always ((dist_sq < min_dist_sq) implies (cmd_vx == min(max(-gain * rel_x, -max_component_speed), max_component_speed)
-            and cmd_vy == min(max(-gain * rel_y, -max_component_speed), max_component_speed)
-            and cmd_vz == min(max(-gain * rel_z, -max_component_speed), max_component_speed)))
+        always ((dist_sq < min_dist_sq) implies (cmd_vx == min(max(-retreat_gain * rel_x, -max_component_speed), max_component_speed)
+            and cmd_vy == min(max(-retreat_gain * rel_y, -max_component_speed), max_component_speed)
+            and cmd_vz == min(max(-retreat_gain * rel_z, -max_component_speed), max_component_speed)))
         always ((dist_sq > max_dist_sq) implies (cmd_vx == min(max(gain * rel_x, -max_component_speed), max_component_speed)
             and cmd_vy == min(max(gain * rel_y, -max_component_speed), max_component_speed)
             and cmd_vz == min(max(gain * rel_z, -max_component_speed), max_component_speed)))
@@ -479,7 +466,7 @@ contract FollowerVelocityDirectionalSafety(min_dist, max_dist, gain, max_compone
 
     
 # REFINE from composite of `FollowerControllerSemantics` and `VelocityActuation`
-contract FollowerVelocitySemantics(min_dist, max_dist, gain, max_component_speed):
+contract FollowerVelocitySemantics(min_dist, max_dist, gain, retreat_gain, max_component_speed):
     inputs:
         dist_sq: float
         rel_x: float
@@ -492,15 +479,16 @@ contract FollowerVelocitySemantics(min_dist, max_dist, gain, max_component_speed
 
     assumptions:
         gain > 0
+        retreat_gain > 0
         max_component_speed > 0
         0 <= min_dist
         min_dist <= max_dist
 
     guarantees:
         always (((min_dist_sq <= dist_sq) and (dist_sq <= max_dist_sq)) implies ((next self.velocity.x) == 0 and (next self.velocity.y) == 0 and (next self.velocity.z) == 0))
-        always ((dist_sq < min_dist_sq) implies ((next self.velocity.x) == min(max(-gain * rel_x, -max_component_speed), max_component_speed)
-            and (next self.velocity.y) == min(max(-gain * rel_y, -max_component_speed), max_component_speed)
-            and (next self.velocity.z) == min(max(-gain * rel_z, -max_component_speed), max_component_speed)))
+        always ((dist_sq < min_dist_sq) implies ((next self.velocity.x) == min(max(-retreat_gain * rel_x, -max_component_speed), max_component_speed)
+            and (next self.velocity.y) == min(max(-retreat_gain * rel_y, -max_component_speed), max_component_speed)
+            and (next self.velocity.z) == min(max(-retreat_gain * rel_z, -max_component_speed), max_component_speed)))
         always ((dist_sq > max_dist_sq) implies ((next self.velocity.x) == min(max(gain * rel_x, -max_component_speed), max_component_speed)
             and (next self.velocity.y) == min(max(gain * rel_y, -max_component_speed), max_component_speed)
             and (next self.velocity.z) == min(max(gain * rel_z, -max_component_speed), max_component_speed)))
@@ -573,7 +561,7 @@ contract KeepsFollowDistanceLiveness(max_dist):
         eventually (true_dist_sq <= max_dist_sq)
 
 # REFINE from composite of `FollowerVelocityDirectionalSafety` and `SquaredDistanceSystemAccuracy`
-contract KeepsFollowDistanceSafety(min_dist, max_dist, timestep=0.1):
+contract FollowerMovementDirectionalSafety(min_dist, max_dist, timestep=0.1):
     definitions:
         # --- squared-distance band thresholds ---
         max_dist_sq = max_dist * max_dist
@@ -605,6 +593,74 @@ contract KeepsFollowDistanceSafety(min_dist, max_dist, timestep=0.1):
         always ((true_dist_sq > max_dist_sq) implies (approach_dot >= 0))
         always ((true_dist_sq < min_dist_sq) implies (approach_dot <= 0))
 
+# REFINE from composite of `FollowerVelocitySemantics` and `SquaredDistanceSystemAccuracy`.
+contract NeverCrash(min_dist, max_dist, gain, retreat_gain, max_component_speed, timestep=0.1, max_leader_speed=2.0):
+    definitions:
+        # --- band thresholds ---
+        max_dist_sq = max_dist * max_dist
+        min_dist_sq = min_dist * min_dist
+
+        # --- leader per-step displacement bound, derived (never hardcode) ---
+        max_leader_step = max_leader_speed * timestep
+
+        # --- collision floor (derived): tightest distance the controller guarantees ---
+        R = min_dist - max_leader_step
+        R_sq = R * R
+
+        # --- ground-truth squared distance, this step and next ---
+        true_rel_x = self.leadPos.x - self.position.x
+        true_rel_y = self.leadPos.y - self.position.y
+        true_rel_z = self.leadPos.z - self.position.z
+        true_dist_sq = true_rel_x * true_rel_x + true_rel_y * true_rel_y + true_rel_z * true_rel_z
+
+        next_true_rel_x = (next self.leadPos.x) - (next self.position.x)
+        next_true_rel_y = (next self.leadPos.y) - (next self.position.y)
+        next_true_rel_z = (next self.leadPos.z) - (next self.position.z)
+        next_true_dist_sq = next_true_rel_x * next_true_rel_x + next_true_rel_y * next_true_rel_y + next_true_rel_z * next_true_rel_z
+
+        next_lead_disp_x = ((next self.leadPos.x) - self.leadPos.x)
+        next_lead_disp_y = ((next self.leadPos.y) - self.leadPos.y)
+        next_lead_disp_z = ((next self.leadPos.z) - self.leadPos.z)
+        next_lead_disp_sq = next_lead_disp_x * next_lead_disp_x + next_lead_disp_y * next_lead_disp_y + next_lead_disp_z * next_lead_disp_z
+
+    assumptions:
+        # parameter sanity
+        gain > 0
+        retreat_gain > 0
+        max_component_speed > 0
+        0 <= min_dist
+        min_dist <= max_dist
+
+        # the floor is positive (equivalently: min_dist > max_leader_step)
+        0 < R
+
+        # retreat margin: down to the floor, the radial retreat speed out-runs the leader
+        # (retreat_gain * dist >= retreat_gain * R >= max_leader_speed for dist >= R)
+        retreat_gain * R >= max_leader_speed
+
+        # clamp inactive across the retreat band [R, min_dist]: retreat velocity is exactly
+        # -retreat_gain * rel, so the radial retreat speed is retreat_gain * dist
+        retreat_gain * min_dist <= max_component_speed
+
+        # far no-overshoot margin: one approach step from beyond max_dist cannot cross the
+        # floor. Uses the sqrt-free L1 over-approximation of the self step:
+        # |self step| <= sqrt(3) * M * timestep <= 3 * M * timestep.
+        max_dist >= R + max_leader_step + 3 * max_component_speed * timestep
+
+        # integration law (same as the other end-to-end contracts)
+        always ((next self.position.x) == self.position.x + timestep * (next self.velocity.x))
+        always ((next self.position.y) == self.position.y + timestep * (next self.velocity.y))
+        always ((next self.position.z) == self.position.z + timestep * (next self.velocity.z))
+
+        # bounded leader step (same as Progress)
+        always next_lead_disp_sq <= max_leader_step * max_leader_step
+
+        # initial condition: the follower starts outside the floor (it starts ~100 units away)
+        true_dist_sq >= R_sq
+
+    guarantees:
+        always (true_dist_sq >= R_sq)
+
 
 ## Verification Steps ##
 
@@ -619,6 +675,7 @@ implement "follower" with Follower(
     MIN_FOLLOW_DIST,
     MAX_FOLLOW_DIST,
     FOLLOW_GAIN,
+    RETREAT_GAIN,
     MAX_COMPONENT_SPEED,
 ) as drone2
 
@@ -652,7 +709,7 @@ sq_dist_accuracy = refine sq_dist_accuracy_raw as \
     LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/SquaredDistanceSystemAccuracyRefinement", LEANLTL_LOC, REPL_LOC)
 
 follower_controller_sem = prove drone2.fcs.fc satisfies \
-    FollowerControllerSemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    FollowerControllerSemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, RETREAT_GAIN, MAX_COMPONENT_SPEED) using \
     LeanContractProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerControllerSemantics", LEANLTL_LOC, REPL_LOC)
 
 follower_controller_dir_safety = refine follower_controller_sem as \
@@ -674,7 +731,7 @@ follower_vel_sem_raw = compose over drone2.fcs:
     use velocity_actuation
 
 follower_vel_sem = refine follower_vel_sem_raw as \
-    FollowerVelocitySemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, MAX_COMPONENT_SPEED) using \
+    FollowerVelocitySemantics(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, RETREAT_GAIN, MAX_COMPONENT_SPEED) using \
     LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerVelocitySemanticsRefinement", LEANLTL_LOC, REPL_LOC)
    
 keeps_follow_dist_progress_raw = compose over drone2:
@@ -689,14 +746,25 @@ keeps_follow_dist_liveness = test drone2 satisfies KeepsFollowDistanceLiveness(M
     using SimulationTesting(scenario=ENVIRONMENT, maxSteps=600, confidence=0.999, batchSize=1, verbose=False),
     terminating after TIME_LIMIT seconds
 
-keeps_follow_dist_safety_raw = compose over drone2:
+follower_movement_dir_safety_raw = compose over drone2:
     use follower_vel_dir_safety
     use sq_dist_accuracy
 
-keeps_follow_dist_safety = refine keeps_follow_dist_safety_raw as \
-    KeepsFollowDistanceSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST) using \
-    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/KeepsFollowDistanceSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+follower_movement_dir_safety = refine follower_movement_dir_safety_raw as \
+    FollowerMovementDirectionalSafety(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/FollowerMovementDirectionalSafetyRefinement", LEANLTL_LOC, REPL_LOC)
+
+# Never-crash: sourced from the EXACT velocity semantics (quantitative retreat speed is
+# required; the directional dot-sign is not enough), composed with distance accuracy.
+never_crash_raw = compose over drone2:
+    use follower_vel_sem
+    use sq_dist_accuracy
+
+never_crash = refine never_crash_raw as \
+    NeverCrash(MIN_FOLLOW_DIST, MAX_FOLLOW_DIST, FOLLOW_GAIN, RETREAT_GAIN, MAX_COMPONENT_SPEED, max_leader_speed=MAX_LEADER_SPEED) using \
+    LeanRefinementProof("LeanLTL/Examples/Scenic/DroneDistance/NeverCrashRefinement", LEANLTL_LOC, REPL_LOC)
 
 verify keeps_follow_dist_progress
 verify keeps_follow_dist_liveness
-verify keeps_follow_dist_safety
+verify follower_movement_dir_safety
+verify never_crash

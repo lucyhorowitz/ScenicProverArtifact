@@ -3,7 +3,7 @@ import LeanLTL
 open LeanLTL
 open scoped LeanLTL.Notation
 
-namespace KeepsFollowDistanceSafetyRefinement
+namespace FollowerMovementDirectionalSafetyRefinement
 
 structure TraceState where
   -- Props

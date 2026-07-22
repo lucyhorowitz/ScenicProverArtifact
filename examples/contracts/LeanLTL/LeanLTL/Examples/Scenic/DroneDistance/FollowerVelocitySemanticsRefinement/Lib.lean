@@ -40,23 +40,25 @@ abbrev min_dist_sq : TraceFun TraceState ℚ := LLTLV[(5.0) * (5.0)]
 
 -- Top Level Assumptions 
 abbrev A0 : TraceSet TraceState := LLTL[((0.2 : ℚ)) > ((0 : ℚ))]
-abbrev A1 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
-abbrev A2 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
-abbrev A3 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
+abbrev A1 : TraceSet TraceState := LLTL[((0.5 : ℚ)) > ((0 : ℚ))]
+abbrev A2 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
+abbrev A3 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
+abbrev A4 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
 
-abbrev assumptions : TraceSet TraceState := LLTL[A0 ∧ A1 ∧ A2 ∧ A3]
+abbrev assumptions : TraceSet TraceState := LLTL[A0 ∧ A1 ∧ A2 ∧ A3 ∧ A4]
 
 -- Internal Assumptions 
 abbrev IA0 : TraceSet TraceState := LLTL[((0.2 : ℚ)) > ((0 : ℚ))]
-abbrev IA1 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
-abbrev IA2 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
-abbrev IA3 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
+abbrev IA1 : TraceSet TraceState := LLTL[((0.5 : ℚ)) > ((0 : ℚ))]
+abbrev IA2 : TraceSet TraceState := LLTL[((3.0 : ℚ)) > ((0 : ℚ))]
+abbrev IA3 : TraceSet TraceState := LLTL[((0 : ℚ)) ≤ ((5.0 : ℚ))]
+abbrev IA4 : TraceSet TraceState := LLTL[((5.0 : ℚ)) ≤ ((15.0 : ℚ))]
 
-abbrev i_assumptions : TraceSet TraceState := LLTL[IA0 ∧ IA1 ∧ IA2 ∧ IA3]
+abbrev i_assumptions : TraceSet TraceState := LLTL[IA0 ∧ IA1 ∧ IA2 ∧ IA3 ∧ IA4]
 
 -- Internal Guarantees 
 abbrev IG0 : TraceSet TraceState := LLTL[𝐆 (((((←min_dist_sq)) ≤ ((←SCENIC_INTERNAL_VAR_0))) ∧ (((←SCENIC_INTERNAL_VAR_0)) ≤ ((←max_dist_sq)))) → ((((←SCENIC_INTERNAL_VAR_4)) = ((0 : ℚ))) ∧ (((←SCENIC_INTERNAL_VAR_5)) = ((0 : ℚ))) ∧ (((←SCENIC_INTERNAL_VAR_6)) = ((0 : ℚ)))))]
-abbrev IG1 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) < ((←min_dist_sq))) → ((((←SCENIC_INTERNAL_VAR_4)) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_5)) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_6)) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
+abbrev IG1 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) < ((←min_dist_sq))) → ((((←SCENIC_INTERNAL_VAR_4)) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_5)) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_6)) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 abbrev IG2 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) > ((←max_dist_sq))) → ((((←SCENIC_INTERNAL_VAR_4)) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_5)) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ (((←SCENIC_INTERNAL_VAR_6)) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 abbrev IG3 : TraceSet TraceState := LLTL[𝐆 (((𝐗 ((←self.velocity.x))) = ((←SCENIC_INTERNAL_VAR_4))) ∧ ((𝐗 ((←self.velocity.y))) = ((←SCENIC_INTERNAL_VAR_5))) ∧ ((𝐗 ((←self.velocity.z))) = ((←SCENIC_INTERNAL_VAR_6))))]
 
@@ -64,7 +66,7 @@ abbrev i_guarantees : TraceSet TraceState := LLTL[IG0 ∧ IG1 ∧ IG2 ∧ IG3]
 
 -- Top Level Guarantees 
 abbrev G0 : TraceSet TraceState := LLTL[𝐆 (((((←min_dist_sq)) ≤ ((←SCENIC_INTERNAL_VAR_0))) ∧ (((←SCENIC_INTERNAL_VAR_0)) ≤ ((←max_dist_sq)))) → (((𝐗 ((←self.velocity.x))) = ((0 : ℚ))) ∧ ((𝐗 ((←self.velocity.y))) = ((0 : ℚ))) ∧ ((𝐗 ((←self.velocity.z))) = ((0 : ℚ)))))]
-abbrev G1 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) < ((←min_dist_sq))) → (((𝐗 ((←self.velocity.x))) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.y))) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.z))) = ((((-((0.2 : ℚ))) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
+abbrev G1 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) < ((←min_dist_sq))) → (((𝐗 ((←self.velocity.x))) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.y))) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.z))) = ((((-((0.5 : ℚ))) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 abbrev G2 : TraceSet TraceState := LLTL[𝐆 ((((←SCENIC_INTERNAL_VAR_0)) > ((←max_dist_sq))) → (((𝐗 ((←self.velocity.x))) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_1))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.y))) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_2))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ)))) ∧ ((𝐗 ((←self.velocity.z))) = (((((0.2 : ℚ)) * ((←SCENIC_INTERNAL_VAR_3))) ⊔ (-((3.0 : ℚ)))) ⊓ ((3.0 : ℚ))))))]
 
 abbrev guarantees : TraceSet TraceState := LLTL[G0 ∧ G1 ∧ G2]
